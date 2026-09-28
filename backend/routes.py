@@ -111,7 +111,7 @@ def delete_conversation(conversation_id):
 @api_bp.route("/conversations/<int:conversation_id>", methods=["PATCH"])
 def update_title(conversation_id):
     data = request.get_json() or {}
-    title = data.get("title")
+    title = data.get("new_title")
     if not title:
         return jsonify({"error" : "missing required field: title"}), 400
     try:
