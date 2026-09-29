@@ -1,12 +1,10 @@
-import './App.css'
+import AuthPage from './components/AuthPage'
 
 function App() {
+  // KHU VỰC DÀNH CHO BẠN TỰ VIẾT LOGIC (useState, gọi API, hàm xử lý...)
+  // Ví dụ: const [messages, setMessages] = useState([]);
 
-  return (
-    <>
-      
-    </>
-  )
+  return <AuthPage />
 }
 
 export default App

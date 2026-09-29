@@ -58,3 +58,12 @@ export const login = async (username: string, password: string) => {
     })
     return response.data
 }
+
+// Register
+export const register = async (username: string, password: string) => {
+    const response = await API.post(`/api/register`, {
+        username : username,
+        password : password
+    })
+    return response.data
+}
