@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from google import genai
 import jwt
 from functools import wraps
+from datetime import datetime, timedelta, timezone
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
@@ -36,11 +37,11 @@ def login():
     if not user.check_password(password):
         return jsonify({"error" : "Invalid credentials"}), 401
     payload = {
-        "user_id" : user.id,
-        "email" : user.email
+        "sub" : user.id,
+        "exp" : datetime.now(timezone.utc) + timedelta(minutes=15)
     }
     token = jwt.encode(payload, secret_key, algorithm='HS256')
-    return jsonify({"token" : token, "refresh_token" : token}), 200
+    return jsonify({"token" : token}), 200
     
 
 # Register
