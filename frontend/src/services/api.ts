@@ -7,6 +7,14 @@ const API = axios.create({
     }
 })
 
+API.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if(token){
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+});
+
 // Get all conversaitions
 export const getConversations = async () => {
     const response = await API.get('/api/conversations');
@@ -14,9 +22,8 @@ export const getConversations = async () => {
 }
 
 // Create conversation
-export const createConversation = async (userId:number, title:string) => {
+export const createConversation = async (title:string) => {
     const response = await API.post('/api/conversations', {
-        user_id : userId,
         title : title,
     });
     return response.data;
@@ -51,18 +58,18 @@ export const sendMessage = async (conversationId : number, message : string) => 
 }
 
 // Login
-export const login = async (username: string, password: string) => {
+export const login = async (email: string, password: string) => {
     const response = await API.post(`/api/login`, {
-        username: username,
+        email: email,
         password: password
     })
     return response.data
 }
 
 // Register
-export const register = async (username: string, password: string) => {
+export const register = async (email: string, password: string) => {
     const response = await API.post(`/api/register`, {
-        username : username,
+        email : email,
         password : password
     })
     return response.data

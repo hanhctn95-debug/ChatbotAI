@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request, g
 from backend.models import Conversation, User, Message
 from backend.extensions import db
-from sqlalchemy import select, delete
+from sqlalchemy import select
 import os
 from dotenv import load_dotenv
 from google import genai
@@ -24,12 +24,12 @@ def get_client_gemini():
 def login():
     # Check fields
     data = request.get_json() or {}
-    username = data.get("username")
+    email = data.get("email")
     password = data.get("password")
-    if not data or not username or not password:
+    if not data or not email or not password:
         return jsonify({"error" : "missing required field"}), 400
 
-    stmt = select(User).where(User.username == username)
+    stmt = select(User).where(User.email == email)
     user = db.session.scalar(stmt)
     if not user:
         return jsonify({"error" : "Invalid credentials"}), 401
@@ -37,10 +37,37 @@ def login():
         return jsonify({"error" : "Invalid credentials"}), 401
     payload = {
         "user_id" : user.id,
-        "username" : user.username
+        "email" : user.email
     }
     token = jwt.encode(payload, secret_key, algorithm='HS256')
-    return jsonify({"token" : token}), 200
+    return jsonify({"token" : token, "refresh_token" : token}), 200
+    
+
+# Register
+@api_bp.route('/register', methods=["POST"])
+def register():
+    data = request.get_json() or {}
+    email = data.get("email")
+    password = data.get("password")
+
+    if not data or not email or not password:
+        return jsonify({"error" : "Email and password are required"}), 400
+    stmt = select(User).where(User.email == email)
+    user = db.session.scalar(stmt)
+    if not user:
+        new_user = User(
+            email = email
+        )
+        new_user.set_password(password)
+        try:
+            db.session.add(new_user)
+            db.session.commit()
+            return jsonify({"message" : "registration successful"}), 200
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": str(e)}), 500
+    db.session.rollback()
+    return jsonify({"error" : "Email already exists"}), 409
     
 
 def jwt_required(f):
@@ -54,7 +81,7 @@ def jwt_required(f):
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
         except Exception as e:
             return jsonify({"error" : str(e)}), 401
-        g.user_id = int(payload["user_id"])
+        g.user_id = str(payload["user_id"])
         return f(*args, **kwargs)
     return wrapper
 
@@ -62,9 +89,10 @@ def jwt_required(f):
 #=====CONVERSATION=====
 # Get all conversations
 @api_bp.route("/conversations", methods=["GET"])
+@jwt_required
 def get_all_conversations():
     try:
-        stmt = select(Conversation).order_by(Conversation.updated_at.desc())
+        stmt = select(Conversation).where(Conversation.user_id == g.user_id).order_by(Conversation.updated_at.desc())
         conversations = db.session.scalars(stmt).all()
         return jsonify([conversation.to_dict() for conversation in conversations]), 200
     except Exception as e:
@@ -74,14 +102,12 @@ def get_all_conversations():
 
 # Add 1 conversation
 @api_bp.route("/conversations", methods=["POST"])
+@jwt_required
 def add_conversation():
     data = request.get_json() or {}
-    user_id = data.get("user_id")
-    if not user_id:
-        return jsonify({"error" : "missing required field: user_id"}), 400
     conv = Conversation(
         title = data.get("title", "Cuộc trò truyện mới"),
-        user_id = data.get("user_id")
+        user_id = g.user_id
     )
     try:
         db.session.add(conv)
@@ -94,11 +120,14 @@ def add_conversation():
 
 # Delete one conversation
 @api_bp.route("/conversations/<int:conversation_id>", methods=["DELETE"])
+@jwt_required
 def delete_conversation(conversation_id):
     try:
         conv = db.session.get(Conversation, conversation_id)
         if not conv:
             return jsonify({"error" : "Conversation not found"}), 404
+        if conv.user_id != g.user_id:
+            return jsonify({"error" : "Forbidden"}), 403
         db.session.delete(conv)
         db.session.commit()
         return jsonify({"message" : "delete successfuly"}), 200
@@ -109,6 +138,7 @@ def delete_conversation(conversation_id):
 
 # Rename conversation
 @api_bp.route("/conversations/<int:conversation_id>", methods=["PATCH"])
+@jwt_required
 def update_title(conversation_id):
     data = request.get_json() or {}
     title = data.get("new_title")
@@ -118,6 +148,8 @@ def update_title(conversation_id):
         conv = db.session.get(Conversation, conversation_id)
         if not conv:
             return jsonify({"error": "Conversation not found"}), 404
+        if conv.user_id != g.user_id:
+            return jsonify({"error" : "Forbidden"}), 403
         conv.title = title
         db.session.commit()
         return jsonify(conv.to_dict()), 200

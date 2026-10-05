@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import AuthPage from './components/AuthPage'
+import ChatPage from './components/ChatPage'
 
 function App() {
-  // KHU VỰC DÀNH CHO BẠN TỰ VIẾT LOGIC (useState, gọi API, hàm xử lý...)
-  // Ví dụ: const [messages, setMessages] = useState([]);
+  const [token, setToken] = useState<string | null>(null);
 
-  return <AuthPage />
+  return (
+  <>
+    {!token && (<AuthPage onLoginSuccess={(newToken) => setToken(newToken)}/>)}
+    {token && (<ChatPage />)}
+  </> );
 }
 
 export default App

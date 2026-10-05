@@ -1,14 +1,15 @@
+from uuid import uuid4
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from sqlalchemy import DateTime, func, ForeignKey
+from sqlalchemy import DateTime, func, ForeignKey, String ,Text, Integer
 from datetime import datetime
 from backend.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class User(db.Model):
     __tablename__ = 'users'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(nullable=False)
-    password_hash: Mapped[str] = mapped_column(nullable=False)
+    id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()), primary_key=True)
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -24,9 +25,9 @@ class User(db.Model):
 
 class Conversation(db.Model):
     __tablename__ = 'conversations'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    title: Mapped[str] = mapped_column(nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()),primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -53,10 +54,10 @@ class Conversation(db.Model):
 
 class Message(db.Model):
     __tablename__ = 'messages'
-    id: Mapped[int] = mapped_column(primary_key=True)
-    role: Mapped[str] = mapped_column(nullable=False)
-    content: Mapped[str] = mapped_column(nullable=False)
-    conversation_id: Mapped[int] = mapped_column(ForeignKey("conversations.id"), nullable=False)
+    id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()), primary_key=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    conversation_id: Mapped[str] = mapped_column(String(36), ForeignKey("conversations.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

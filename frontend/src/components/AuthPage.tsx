@@ -1,43 +1,75 @@
 import { useState, type SubmitEvent } from "react";
-import React from "react";
+import { login, register } from "../services/api";
 
-function AuthPage() {
-    const [username, setUsername] = useState('');
+type AuthPageProps = {
+  onLoginSuccess: (token: string) => void;
+};
+
+function AuthPage({onLoginSuccess}: AuthPageProps) {
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isRegister, setIsRegister] = useState(false);
     const [confirmPassword, setConfirmPassword] = useState('');
-    const [error, serError] = useState('');
+    const [error, setError] = useState('');
 
-function handleSubmit(event: SubmitEvent<HTMLFormElement>){
-    if (!username || !password){
-        serError("Vui lòng nhâp tên đăng nhập và mật khẩu")
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>){
+    event.preventDefault()
+    if (!email.trim() || !password){
+        setError("Vui lòng nhâp tên đăng nhập và mật khẩu");
         return;
     }
     if (isRegister && password !== confirmPassword){
-        serError("Mật khẩu xác nhận không khớp")
+        setError("Mật khẩu xác nhận không khớp");
         return;
     }
-    serError("")
+    setError("");
+
+    // Call api login or register
+    try {
+      const result = isRegister ? await register(email, password) : await login(email, password);
+      if (isRegister){
+        alert("Đăng ký thành công! Vui lòng đăng nhập.");
+        setIsRegister(false);
+        setEmail("");
+        setPassword("");
+        setConfirmPassword("");
+      }
+      if(!isRegister){
+        localStorage.setItem("token", result.token);
+        onLoginSuccess(result.token);
+      }
+    }catch (error) {
+      setError("Đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau.");
+    }
+  
+}
+
+function handleToggleMode(){
+  setIsRegister(!isRegister);
+  setEmail("")
+  setPassword("")
+  setError("")
+  setConfirmPassword("")
 }
     
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#E8F5E9] p-6 text-[#e3e3e3]">
+    <main className="flex min-h-screen items-center justify-center bg-[#0f172a] p-6 text-[#e3e3e3]">
       <section className="w-full max-w-md rounded-2xl border border-[#2d2e30] bg-[#1e1f20] p-8">
         <h1 className="text-2xl font-semibold">{isRegister ? "Đăng ký" : "Đăng nhập"}</h1>
 
         <p className="mt-2 text-sm text-[#999c9e]">
           {isRegister ? "Tạo tài khoản để bắt đầu trò chuyện" : "Đăng nhập để tiếp tục trò chuyện."}
         </p>
-        <form className="mt-6" onSubmit={(event) => event.preventDefault()}>
-          <label htmlFor="username" className="mb-2 block text-sm">
-            Tên đăng nhập
+        <form className="mt-6" onSubmit={handleSubmit}>
+          <label htmlFor="email" className="mb-2 block text-sm">
+            Email
           </label>
           <input
-            id="username"
-            type="text"
-            placeholder="Nhập tên đăng nhập"
-            onChange={(event) => setUsername(event.target.value)}
-            value={username}
+            id="email"
+            type="email"
+            placeholder="Nhập email"
+            onChange={(event) => setEmail(event.target.value)}
+            value={email}
             className="w-full rounded-lg border border-[#3a3b3d] bg-[#131314] px-3 py-2 text-sm outline-none focus:border-blue-400"
           />
           
@@ -69,6 +101,7 @@ function handleSubmit(event: SubmitEvent<HTMLFormElement>){
                 </>
             )
           }
+          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
           <button type="submit" 
             className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500">
             {isRegister ? "Đăng ký" : "Đăng nhập"}
@@ -76,7 +109,7 @@ function handleSubmit(event: SubmitEvent<HTMLFormElement>){
         </form>
         <button
             type = "button"
-            onClick={() => setIsRegister(!isRegister)}
+            onClick={handleToggleMode}
             className="mt-4 w-full text-sm text-blue-300 hover:text-blue-200"
         >
             {isRegister? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký"}
