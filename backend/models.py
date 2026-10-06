@@ -89,4 +89,4 @@ class RefreshToken(db.Model):
     revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     family_id: Mapped[str] = mapped_column(String(36), nullable=False) 
 
-    user = relationship("User", backref="refresh_tokens")
+    user = relationship("User", back_populates="refresh_tokens")

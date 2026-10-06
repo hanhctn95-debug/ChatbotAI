@@ -1,5 +1,5 @@
-from flask import Blueprint, jsonify, request, g
-from backend.models import Conversation, User, Message
+from flask import Blueprint, jsonify, request, g, make_response
+from backend.models import Conversation, User, Message, RefreshToken
 from backend.extensions import db
 from sqlalchemy import select
 import os
@@ -8,6 +8,9 @@ from google import genai
 import jwt
 from functools import wraps
 from datetime import datetime, timedelta, timezone
+import secrets
+import hashlib
+from uuid import uuid4
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
@@ -36,12 +39,41 @@ def login():
         return jsonify({"error" : "Invalid credentials"}), 401
     if not user.check_password(password):
         return jsonify({"error" : "Invalid credentials"}), 401
+
+    #  Create access token
     payload = {
         "sub" : user.id,
         "exp" : datetime.now(timezone.utc) + timedelta(minutes=15)
     }
-    token = jwt.encode(payload, secret_key, algorithm='HS256')
-    return jsonify({"token" : token}), 200
+
+    # Create refresh token
+    refresh_token = secrets.token_urlsafe(32)
+    new_refresh_token = RefreshToken(
+        user_id = user.id,
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest(),
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at = None,
+        family_id = str(uuid4())
+    )
+
+    # Save refresh token to DB
+    try:
+        db.session.add(new_refresh_token)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error" : str(e)}), 500
+
+    access_token = jwt.encode(payload, secret_key, algorithm='HS256')
+    resp = make_response(jsonify({"access_token" : access_token}), 200)
+    resp.set_cookie(
+        "refresh_token",
+        refresh_token,
+        max_age=7*24*60*60,
+        httponly=True,
+        samesite="Lax",
+    )
+    return resp
     
 
 # Register
@@ -79,10 +111,12 @@ def jwt_required(f):
             return jsonify({"error": "Invalid Authorization header"}), 401
         token = parts[1]
         try:
-            payload = jwt.decode(token, secret_key, algorithms=["HS256"])
-        except Exception as e:
-            return jsonify({"error" : str(e)}), 401
-        g.user_id = str(payload["user_id"])
+            payload = jwt.decode(token, secret_key, algorithms=["HS256"], options={"require": ["exp", "sub"]})
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error" : "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error" : "Invalid token"}), 401
+        g.user_id = str(payload["sub"])
         return f(*args, **kwargs)
     return wrapper
 
