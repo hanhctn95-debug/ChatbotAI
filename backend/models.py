@@ -1,6 +1,6 @@
 from uuid import uuid4
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from sqlalchemy import DateTime, func, ForeignKey, String ,Text, Integer
+from sqlalchemy import DateTime, func, ForeignKey, String ,Text
 from datetime import datetime
 from backend.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -16,6 +16,7 @@ class User(db.Model):
         nullable=False
     )
     conversations = relationship("Conversation", back_populates="user")
+    refresh_tokens = relationship("RefreshToken", back_populates="user")
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -73,3 +74,19 @@ class Message(db.Model):
             "conversation_id" : self.conversation_id,
             "created_at" : int(self.created_at.timestamp() * 1000)
         }
+
+class RefreshToken(db.Model):
+    __tablename__ = 'refresh_tokens'
+    id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    family_id: Mapped[str] = mapped_column(String(36), nullable=False) 
+
+    user = relationship("User", backref="refresh_tokens")
