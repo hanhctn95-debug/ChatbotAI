@@ -1,4 +1,4 @@
-import {createConversation, getConversations, deleteConversation, renameConversation} from "../services/api";
+import {createConversation, getConversations, logout} from "../services/api";
 import {useState, useEffect} from "react";
 
 // Define the Conversation type
@@ -11,9 +11,7 @@ type Conversation = {
 function ChatPage(){
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [error, setError] = useState('');
-    const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-    const [editingConversation, setEditingConversation] = useState<Conversation | null>(null);
-    const [editingTitle, setEditingTitle] = useState('');
+
 
     // Load all conversations when starting the page
     useEffect(() => {
@@ -39,14 +37,7 @@ function ChatPage(){
     }
 
     // hadle rename conversation
-    function startRename(conversation: Conversation){
-        
-    }
 
-    // Save rename conversation
-    async function handleSaveRename(){
-        
-    }
 
     return (
         <main className="flex min-h-screen bg-[#0f172a] text-white">

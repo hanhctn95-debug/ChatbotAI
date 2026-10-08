@@ -8,7 +8,7 @@ from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__, template_folder='templates')
-    CORS(app)
+    CORS(app, supports_credentials=True, allow_origins=["http://localhost:5173"])
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///./testdb.db'
     
     db.init_app(app)
