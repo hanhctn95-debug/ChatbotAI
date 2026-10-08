@@ -35,8 +35,8 @@ function AuthPage({onLoginSuccess}: AuthPageProps) {
         setConfirmPassword("");
       }
       if(!isRegister){
-        localStorage.setItem("token", result.token);
-        onLoginSuccess(result.token);
+        localStorage.setItem("access_token", result.access_token);
+        onLoginSuccess(result.access_token);
       }
     }catch (error) {
       setError("Đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau.");

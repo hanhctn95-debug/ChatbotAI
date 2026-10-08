@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request, g, make_response
 from backend.models import Conversation, User, Message, RefreshToken
 from backend.extensions import db
-from sqlalchemy import select
+from sqlalchemy import select, update
 import os
 from dotenv import load_dotenv
 from google import genai
@@ -43,7 +43,7 @@ def login():
     #  Create access token
     payload = {
         "sub" : user.id,
-        "exp" : datetime.now(timezone.utc) + timedelta(minutes=15)
+        "exp" : datetime.now(timezone.utc) + timedelta(minutes=30)
     }
 
     # Create refresh token
@@ -103,6 +103,28 @@ def register():
     return jsonify({"error" : "Email already exists"}), 409
     
 
+# Logout
+@api_bp.route('/logout', methods=["POST"])
+def logout():
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        return jsonify({"error" : "Logged out"}), 200
+    try:
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+        stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+        refresh_token_obj = db.session.scalar(stmt)
+
+        if not refresh_token_obj:
+            return jsonify({"error" : "Refresh token is invalid"}), 401
+        refresh_token_obj.revoked_at = datetime.now(timezone.utc)
+        resp = make_response(jsonify({"message" : "Logged out"}), 200)
+        resp.delete_cookie("refresh_token", httponly=True, samesite="Lax")
+        return resp
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error" : str(e)}), 500
+
+# Decorator to require JWT authentication
 def jwt_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -119,6 +141,78 @@ def jwt_required(f):
         g.user_id = str(payload["sub"])
         return f(*args, **kwargs)
     return wrapper
+
+
+# Refresh access token
+@api_bp.route('/refresh', methods=["POST"])
+def refresh():
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        return jsonify({"error" : "Refresh token is missing"}), 401
+    token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+    stmt = select(RefreshToken).where(RefreshToken.token_hash == token_hash)
+    refresh_token_obj = db.session.scalar(stmt)
+
+    if not refresh_token_obj:
+        return jsonify({"error" : "Refresh token is invalid"}), 401
+    
+    if refresh_token_obj.revoked_at is not None:
+        # Revoke all tokens in the same family
+        try:
+            now = datetime.now(timezone.utc)
+            db.session.execute(
+                update(RefreshToken)
+                .where(RefreshToken.family_id == refresh_token_obj.family_id)
+                .values(revoked_at=now)
+            )
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error" : str(e)}), 500
+        resp = make_response(jsonify({"error" : "Refresh token has been revoked"}), 401)
+        resp.delete_cookie("refresh_token", httponly=True, samesite="Lax")
+        return resp
+    
+    if refresh_token_obj.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        resp = make_response(jsonify({"error" : "Refresh token has expired"}), 401)
+        resp.delete_cookie("refresh_token", httponly=True, samesite="Lax")
+        return resp
+    
+    refresh_token_obj.revoked_at = datetime.now(timezone.utc)
+    # Create new access token 
+    payload = {
+        "sub" : refresh_token_obj.user_id,
+        "exp" : datetime.now(timezone.utc) + timedelta(minutes=30)
+    }
+    access_token = jwt.encode(payload, secret_key, algorithm='HS256')
+    
+    # Create new refresh token
+    refresh_token = secrets.token_urlsafe(32)
+    new_refresh_token = RefreshToken(
+        user_id = refresh_token_obj.user_id,
+        token_hash = hashlib.sha256(refresh_token.encode()).hexdigest(),
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7),
+        revoked_at = None,
+        family_id = refresh_token_obj.family_id
+    )
+    # Save refresh token to DB
+    try:
+        db.session.add(new_refresh_token)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error" : str(e)}), 500
+
+    # Create response
+    resp = make_response(jsonify({"access_token" : access_token}), 200)
+    resp.set_cookie(
+        "refresh_token",
+        refresh_token,
+        max_age=7*24*60*60,
+        httponly=True,
+        samesite="Lax",
+    )
+    return resp
 
 
 #=====CONVERSATION=====

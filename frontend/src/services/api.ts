@@ -74,3 +74,9 @@ export const register = async (email: string, password: string) => {
     })
     return response.data
 }
+
+// Log out
+export const logout = async () => {
+    const response = await API.post('api/logout')
+    return response.data
+}

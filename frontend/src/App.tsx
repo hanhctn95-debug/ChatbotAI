@@ -3,7 +3,7 @@ import AuthPage from './components/AuthPage'
 import ChatPage from './components/ChatPage'
 
 function App() {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("token"));
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem("access_token"));
 
   return (
   <>
