@@ -44,13 +44,13 @@ function AuthPage({onLoginSuccess}: AuthPageProps) {
   
 }
 
-function handleToggleMode(){
-  setIsRegister(!isRegister);
-  setEmail("")
-  setPassword("")
-  setError("")
-  setConfirmPassword("")
-}
+  function handleToggleMode(){
+    setIsRegister(!isRegister);
+    setEmail("")
+    setPassword("")
+    setError("")
+    setConfirmPassword("")
+  }
     
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0f172a] p-6 text-[#e3e3e3]">

@@ -8,7 +8,7 @@ function App() {
   return (
   <>
     {!token && (<AuthPage onLoginSuccess={(newToken) => setToken(newToken)}/>)}
-    {token && (<ChatPage />)}
+    {token && (<ChatPage onLogoutSuccess={(token) => setToken(token)}/>)}
   </> );
 }
 
