@@ -117,14 +117,20 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 </button>
                 {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
                 <div className="mt-4 flex-1 overflow-y-auto custom-scrollbar">
-                    {conversations.map((conversation) => (
+                    {conversations.map((conversation) => {
+                        const isSelected = conversation.id === selectedConversationId;
+                        return(
                         <button
                             onClick={() => setSelectedConversationId(conversation.id)}
                             key={conversation.id}
-                            className="w-full rounded-lg p-2 text-left text-sm hover:bg-slate-800">
+                            className={`w-full rounded-lg p-2 text-left text-sm hover:bg-slate-800
+                            ${isSelected
+                            ? 'bg-slate-700/60'
+                            : 's'}`}>
                             {conversation.title}
                         </button>
-                    ))}
+                        );
+                    })}
                 </div>
                 <button type="button" onClick={onLogout} className="w-full mt-4 rounded-lg hover:bg-red-600 px-4 py-2 text-sm">
                     Đăng xuất
