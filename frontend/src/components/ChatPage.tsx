@@ -23,6 +23,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [selectedConversationId, setSelectedConversationId] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputMessage, setInputMessage] = useState('');
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null); 
 
     // Create ref
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -56,6 +57,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         loadConversations();
     }, [])
 
+    // Load messages
     useEffect(() => {
         if(!selectedConversationId) return;
         async function loadMessages() {
@@ -97,6 +99,12 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             }
 
             setMessages((prev) => [...prev, {role : "user", content : userMessage}])
+            setConversations((preConversations) => {
+                const activeConversation = preConversations.find(conv => conv.id === targetConversationId);
+                if(!activeConversation) return preConversations;
+                const Conversations = preConversations.filter(conv => conv.id !== targetConversationId);
+                return [activeConversation, ...Conversations]
+            })
             const newMessage = await sendMessage(targetConversationId, userMessage);
             setMessages((prev) => [...prev, newMessage]);
         }catch(error){
@@ -104,7 +112,16 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         }
     }
 
-    // hadle rename conversation
+    // Click outside to close menu
+    useEffect(() => {
+        function handleClickOutside(){
+            setOpenMenuId(null);
+        }
+        if(openMenuId){
+            window.addEventListener('click', handleClickOutside);
+        }
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, [openMenuId])
 
 
     return (
@@ -119,20 +136,58 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 <div className="mt-4 flex-1 overflow-y-auto custom-scrollbar">
                     {conversations.map((conversation) => {
                         const isSelected = conversation.id === selectedConversationId;
+                        const isMenuOpen = conversation.id === openMenuId;
                         return(
-                        <button
+                        <div
                             onClick={() => setSelectedConversationId(conversation.id)}
                             key={conversation.id}
-                            className={`w-full rounded-lg p-2 text-left text-sm hover:bg-slate-800
+                            className={`relative group flex items-center justify-between w-full rounded-lg p-2 mb-1 text-sm hover:bg-slate-800 cursor-pointer
                             ${isSelected
                             ? 'bg-slate-700/60'
-                            : 's'}`}>
-                            {conversation.title}
-                        </button>
-                        );
+                            : ''}`}>
+                            <span className="truncate flex-1 text-left">
+                                {conversation.title}
+                            </span>
+                            <button 
+                            onClick={
+                                (event) => {
+                                    event.stopPropagation();
+                                    setOpenMenuId(openMenuId ? null : conversation.id);
+                                }
+                            }
+                            className={`px-2 py-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-600 
+                                        ${isMenuOpen ? 'block' : 'invisible group-hover:visible'}`}>
+                                ...
+                            </button>
+                            {isMenuOpen && (
+                                <div
+                                className='absolute right-0 top-full mt-1 w-32 bg-slate-800 border border-slate-600 rounded-md shadow-lg z-50 overflow-hidden'
+                                onClick={(e) => e.stopPropagation()}>
+                                    <button 
+                                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-slate-200"
+                                        onClick={() => {
+                                            console.log("Sẽ gọi API đổi tên cho ID:", conversation.id);
+                                            setOpenMenuId(null);
+                                        }}
+                                    >
+                                        Đổi tên
+                                    </button>
+                                    <button 
+                                        className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-red-400"
+                                        onClick={() => {
+                                            console.log("Sẽ gọi API xóa cho ID:", conversation.id);
+                                            setOpenMenuId(null);
+                                        }}
+                                    >
+                                        Xóa
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        );  
                     })}
                 </div>
-                <button type="button" onClick={onLogout} className="w-full mt-4 rounded-lg hover:bg-red-600 px-4 py-2 text-sm">
+                <button type="button" onClick={onLogout} className="w-full mt-4 rounded-lg hover:bg-red-600 px-4 py-2 text-sm border">
                     Đăng xuất
                 </button>
             </aside>
