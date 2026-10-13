@@ -1,5 +1,5 @@
 import {createConversation, getConversations, logout, getMessages, sendMessage} from "../services/api";
-import {useState, useEffect, type SubmitEvent} from "react";
+import {useState, useEffect, type SubmitEvent, useRef} from "react";
 
 // Define the Conversation type
 type Conversation = {
@@ -23,6 +23,19 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [selectedConversationId, setSelectedConversationId] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputMessage, setInputMessage] = useState('');
+
+    // Create ref
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    // function scroll to bottom
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({behavior: "smooth"})
+    }
+
+    // Call scrollToBottom whem mesages change
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages])
 
     // Handle log out
     async function onLogout() {
@@ -118,8 +131,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 </button>
             </aside>
             <section className="flex flex-1 flex-col">
-                <header className="flex border-b border-slate-700 p-4" >
-                    <h1 className="text-lg font-semibold">Chatbot AI</h1>
+                <header className="flex justify-center border-b border-slate-700 p-4" >
+                    <h1 className="text-lg font-semibold">CHATBOT</h1>
                 </header>
                 <div className="flex-1 p-6 overflow-y-auto space-y-4">
                     {messages.length === 0 ? (
@@ -142,6 +155,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                             </div>
                         ))
                     )}
+                    <div ref={messagesEndRef}></div>
                 </div>
                 <form onSubmit={handleSendMessages} className="flex gap-2 border-t border-slate-700 p-4">
                     <input 
