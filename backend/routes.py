@@ -248,7 +248,7 @@ def add_conversation():
 
 
 # Delete one conversation
-@api_bp.route("/conversations/<int:conversation_id>", methods=["DELETE"])
+@api_bp.route("/conversations/<string:conversation_id>", methods=["DELETE"])
 @jwt_required
 def delete_conversation(conversation_id):
     try:
@@ -266,7 +266,7 @@ def delete_conversation(conversation_id):
 
 
 # Rename conversation
-@api_bp.route("/conversations/<int:conversation_id>", methods=["PATCH"])
+@api_bp.route("/conversations/<string:conversation_id>", methods=["PATCH"])
 @jwt_required
 def update_title(conversation_id):
     data = request.get_json() or {}
@@ -289,10 +289,10 @@ def update_title(conversation_id):
 
 #=====CHAT=====
 # Get all messages in a conversation
-@api_bp.route("/conversations/<int:conversation_id>/messages", methods=["GET"])
+@api_bp.route("/conversations/<string:conversation_id>/messages", methods=["GET"])
 def get_all_messages(conversation_id):
     try:
-        stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc())
+        stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
         messages = db.session.scalars(stmt).all()
         return jsonify([message.to_dict() for message in messages]), 200
     except Exception as e:
@@ -301,7 +301,7 @@ def get_all_messages(conversation_id):
 
 
 # Process message
-@api_bp.route("/chat/<int:conversation_id>", methods=["POST"])
+@api_bp.route("/chat/<string:conversation_id>", methods=["POST"])
 def chat(conversation_id):
     conv = db.session.get(Conversation, conversation_id)
     if not conv:
@@ -351,4 +351,4 @@ def chat(conversation_id):
         db.session.rollback()
         return jsonify({"error" : str(e)}), 500
 
-    return jsonify({"message" : reply_text,}), 200
+    return jsonify({"content" : reply_text, "role":"assistant"}), 200

@@ -1,11 +1,16 @@
-import {createConversation, getConversations, logout} from "../services/api";
-import {useState, useEffect} from "react";
+import {createConversation, getConversations, logout, getMessages, sendMessage} from "../services/api";
+import {useState, useEffect, type SubmitEvent} from "react";
 
 // Define the Conversation type
 type Conversation = {
-    id: number;
+    id: string;
     title: string;
 };
+
+type Message = {
+    content: string;
+    role: string;
+}
 
 type ChatPageProps = {
     onLogoutSuccess: (token: string | null) => void;
@@ -15,6 +20,9 @@ type ChatPageProps = {
 function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [error, setError] = useState('');
+    const [selectedConversationId, setSelectedConversationId] = useState('');
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [inputMessage, setInputMessage] = useState('');
 
     // Handle log out
     async function onLogout() {
@@ -35,6 +43,19 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         loadConversations();
     }, [])
 
+    useEffect(() => {
+        if(!selectedConversationId) return;
+        async function loadMessages() {
+            try{
+                const data = await getMessages(selectedConversationId);
+                setMessages(data);
+            }catch(error){
+                setError("Đã xảy ra lỗi khi tải tin nhắn");
+            }
+        }
+        loadMessages();
+    },[selectedConversationId])
+
     // Handle create new conversation
     async function handleCreateNewConversation(){
         try {
@@ -43,6 +64,31 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         }catch (error) {
             setError("Đã xảy ra lỗi khi tạo cuộc trò chuyện mới");
             }
+    }
+
+    // Handle send messages
+    async function handleSendMessages(event: SubmitEvent<HTMLElement>){
+        event.preventDefault();
+        if (!inputMessage.trim()) return;
+
+        let targetConversationId = selectedConversationId;
+        const userMessage = inputMessage;
+        setInputMessage('');
+
+        try{
+            if(!targetConversationId){
+                const newConv = await createConversation(userMessage.slice(0, 25) + "...");
+                setConversations((prev) => [newConv, ...prev]);
+                setSelectedConversationId(newConv.id);
+                targetConversationId = newConv.id;
+            }
+
+            setMessages((prev) => [...prev, {role : "user", content : userMessage}])
+            const newMessage = await sendMessage(targetConversationId, userMessage);
+            setMessages((prev) => [...prev, newMessage]);
+        }catch(error){
+            setError("Đã xảy ra lỗi khi gửi tin nhắn")
+        }
     }
 
     // hadle rename conversation
@@ -60,6 +106,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 <div className="mt-4 flex-1 overflow-y-auto custom-scrollbar">
                     {conversations.map((conversation) => (
                         <button
+                            onClick={() => setSelectedConversationId(conversation.id)}
                             key={conversation.id}
                             className="w-full rounded-lg p-2 text-left text-sm hover:bg-slate-800">
                             {conversation.title}
@@ -74,14 +121,35 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 <header className="flex border-b border-slate-700 p-4" >
                     <h1 className="text-lg font-semibold">Chatbot AI</h1>
                 </header>
-                <div className="flex-1 p-6 overflow-y-auto">
-                    Khu vực hiển thị tin nhắn
+                <div className="flex-1 p-6 overflow-y-auto space-y-4">
+                    {messages.length === 0 ? (
+                        <div className="flex h-full items-center justify-center text-slate-500">
+                            Chưa có tin nhắn nào. Hãy bắt đầu trò chuyện!
+                        </div>
+                    ) : (
+                        messages.map((msg, index) => (
+                            <div 
+                                key={index} 
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            >
+                                <div className={`max-w-xl rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                    msg.role === 'user' 
+                                        ? 'bg-blue-600 text-white rounded-br-xs' 
+                                        : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-xs'
+                                }`}>
+                                    {msg.content}
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
-                <form className="flex gap-2 border-t border-slate-700 p-4">
+                <form onSubmit={handleSendMessages} className="flex gap-2 border-t border-slate-700 p-4">
                     <input 
                         type="text"
+                        value={inputMessage}
                         placeholder="Nhập tin nhắn..."
                         className="flex-1 rounded-lg bg-slate-800 px-4 py-2 outline-none"
+                        onChange={(event) => setInputMessage(event.target.value)}
                     />
                     <button 
                         type="submit"
