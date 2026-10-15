@@ -26,6 +26,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [openMenuId, setOpenMenuId] = useState<string | null>(null); 
     const [newTitle, setNewTile] = useState('');
     const [isRenameModelOpen, setIsRenameModelOpen] = useState(false);
+    const [renameId, setRenameId] = useState<string | null>(null)
 
     // Create ref
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -128,7 +129,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     }, [openMenuId, isRenameModelOpen])
 
     // Delete conversation
-    async function handleDelteteConversation(idToDelete: string){
+    async function handleDelteteConversation(idToDelete: string | null){
+        if(!idToDelete) return;
         const data = await deleteConversation(idToDelete);
         if(data.error){
             setError("Lỗi không thể xóa, vui lòng thử lại sau");
@@ -144,10 +146,16 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     }
 
     // Rename conversation
-    async function handleRenameConversation(idToRename: string){
+    async function handleRenameConversation(idToRename: string | null){
+        if(!idToRename) return;
         try{
             const data = await renameConversation(idToRename, newTitle);
-            setNewTile(data.title);
+            setConversations((preConversation) => {
+                return preConversation.map((conv) => conv.id === idToRename ? {...conv, title: data.title} : conv);
+            })
+            setNewTile('');
+            setRenameId(null);
+            setIsRenameModelOpen(false);
         }catch(error){
             setError("Lỗi khi đổi tên");
         }
@@ -182,7 +190,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                             onClick={
                                 (event) => {
                                     event.stopPropagation();
-                                    setOpenMenuId(openMenuId ? null : conversation.id);
+                                    setOpenMenuId(openMenuId ? null : conversation.id); // If the menu closed, set the id to open it. If the menu is open set null to close
                                 }
                             }
                             className={`px-2 py-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-600 
@@ -196,6 +204,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                     <button 
                                         className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-slate-200"
                                         onClick={() => {
+                                            setRenameId(conversation.id);
                                             setIsRenameModelOpen(true);
                                             setOpenMenuId(null);
                                         }}
@@ -265,24 +274,34 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             </section>
             {isRenameModelOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                    <div className="w-full max-w-md rounded-xl bg-slate-800 border border-slate-700 p-6 text-white shadow-xl">
+                    <div className="w-full max-w-md rounded-xl bg-slate-800 border border-slate-700 p-6 text-white shadow-xl"
+                    onClick={(event) => event.stopPropagation()}>
                         <h3 className="text-lg font-semibold mb-4">Đổi tên cuộc trò chuyện</h3>
                         
                         <input 
                             type="text"
                             placeholder="Nhập tên mới..."
                             className="w-full rounded-lg bg-slate-900 border border-slate-600 px-4 py-2.5 text-sm outline-none focus:border-blue-500 mb-6"
+                            value={newTitle}
+                            onChange={(event) => setNewTile(event.target.value)}
                         />
                         <div className="flex justify-end gap-3">
                             <button 
                                 type="button"
                                 className="rounded-lg px-4 py-2 text-sm bg-slate-700 hover:bg-slate-600 transition-colors"
+                                onClick={() => {
+                                    setIsRenameModelOpen(false);
+                                    setNewTile('')
+                                }}
                             >
                                 Hủy
                             </button>
                             <button 
-                                type="button"
+                                type="submit"
                                 className="rounded-lg px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 transition-colors font-medium"
+                                onClick={() => {
+                                    handleRenameConversation(renameId);
+                                }}
                             >
                                 Đổi tên
                             </button>
