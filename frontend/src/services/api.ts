@@ -92,13 +92,13 @@ export const createConversation = async (title:string) => {
 }
 
 // Delete conversation
-export const deleteConversation = async (conversationId : number) => {
+export const deleteConversation = async (conversationId : string) => {
     const response = await API.delete(`/api/conversations/${conversationId}`);
     return response.data
 }
 
 // Rename conversation
-export const renameConversation = async (conversationId : number, newTitle : string) => {
+export const renameConversation = async (conversationId : string, newTitle : string) => {
     const response = await API.patch(`/api/conversations/${conversationId}`, {
         new_title : newTitle
     });

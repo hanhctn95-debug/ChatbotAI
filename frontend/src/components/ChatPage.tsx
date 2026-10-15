@@ -1,4 +1,4 @@
-import {createConversation, getConversations, logout, getMessages, sendMessage} from "../services/api";
+import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation} from "../services/api";
 import {useState, useEffect, type SubmitEvent, useRef} from "react";
 
 // Define the Conversation type
@@ -123,6 +123,18 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         return () => window.removeEventListener('click', handleClickOutside);
     }, [openMenuId])
 
+    // Delete conversation
+    async function handleDelteteConversation(idToDelete: string){
+        const response = await deleteConversation(idToDelete);
+        setConversations((preConversations) => {
+            return preConversations.filter(conv => conv.id !== idToDelete)
+        })
+        if(selectedConversationId === openMenuId){
+            setMessages([]);
+            setSelectedConversationId('');
+        }
+    }
+
 
     return (
         <main className="flex h-screen bg-[#0f172a] text-white">
@@ -166,7 +178,6 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                     <button 
                                         className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-slate-200"
                                         onClick={() => {
-                                            console.log("Sẽ gọi API đổi tên cho ID:", conversation.id);
                                             setOpenMenuId(null);
                                         }}
                                     >
@@ -175,7 +186,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                     <button 
                                         className="w-full text-left px-3 py-2 text-sm hover:bg-slate-700 text-red-400"
                                         onClick={() => {
-                                            console.log("Sẽ gọi API xóa cho ID:", conversation.id);
+                                            handleDelteteConversation(openMenuId);
                                             setOpenMenuId(null);
                                         }}
                                     >
