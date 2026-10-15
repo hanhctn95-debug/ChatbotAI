@@ -103,8 +103,28 @@ def register():
     return jsonify({"error" : "Email already exists"}), 409
     
 
+# Decorator to require JWT authentication
+def jwt_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        parts = request.headers.get("Authorization", "").split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return jsonify({"error": "Invalid Authorization header"}), 401
+        token = parts[1]
+        try:
+            payload = jwt.decode(token, secret_key, algorithms=["HS256"], options={"require": ["exp", "sub"]})
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error" : "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error" : "Invalid token"}), 401
+        g.user_id = str(payload["sub"])
+        return f(*args, **kwargs)
+    return wrapper
+
+
 # Logout
 @api_bp.route('/logout', methods=["POST"])
+@jwt_required
 def logout():
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
@@ -123,24 +143,6 @@ def logout():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error" : str(e)}), 500
-
-# Decorator to require JWT authentication
-def jwt_required(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        parts = request.headers.get("Authorization", "").split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return jsonify({"error": "Invalid Authorization header"}), 401
-        token = parts[1]
-        try:
-            payload = jwt.decode(token, secret_key, algorithms=["HS256"], options={"require": ["exp", "sub"]})
-        except jwt.ExpiredSignatureError:
-            return jsonify({"error" : "Token has expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"error" : "Invalid token"}), 401
-        g.user_id = str(payload["sub"])
-        return f(*args, **kwargs)
-    return wrapper
 
 
 # Refresh access token
@@ -290,6 +292,7 @@ def update_title(conversation_id):
 #=====CHAT=====
 # Get all messages in a conversation
 @api_bp.route("/conversations/<string:conversation_id>/messages", methods=["GET"])
+@jwt_required
 def get_all_messages(conversation_id):
     try:
         stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
@@ -302,6 +305,7 @@ def get_all_messages(conversation_id):
 
 # Process message
 @api_bp.route("/chat/<string:conversation_id>", methods=["POST"])
+@jwt_required
 def chat(conversation_id):
     conv = db.session.get(Conversation, conversation_id)
     if not conv:
@@ -330,7 +334,7 @@ def chat(conversation_id):
     try:
         client = get_client_gemini()
         response = client.models.generate_content(
-            model="gemini-3.8-flash",
+            model="gemini-3.5-flash",
             contents=message
         )
         reply_text = response.text
