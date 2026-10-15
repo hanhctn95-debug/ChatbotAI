@@ -126,6 +126,10 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     // Delete conversation
     async function handleDelteteConversation(idToDelete: string){
         const response = await deleteConversation(idToDelete);
+        if(response.error){
+            setError("Lỗi không thể xóa, vui lòng thử lại sau");
+            return;
+        }
         setConversations((preConversations) => {
             return preConversations.filter(conv => conv.id !== idToDelete)
         })
