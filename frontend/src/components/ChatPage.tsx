@@ -76,6 +76,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         try {
             const newConversation = await createConversation("Cuộc trò truyện mới");
             setConversations((currentConversations) => [newConversation, ...currentConversations]);
+            setSelectedConversationId(newConversation.id);
         }catch (error) {
             setError("Đã xảy ra lỗi khi tạo cuộc trò chuyện mới");
             }
