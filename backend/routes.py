@@ -294,6 +294,11 @@ def update_title(conversation_id):
 @api_bp.route("/conversations/<string:conversation_id>/messages", methods=["GET"])
 @jwt_required
 def get_all_messages(conversation_id):
+    conversation = db.session.get(Conversation, conversation_id)
+    if not conversation:
+        return jsonify({"error": "Conversation not found"}), 404
+    if conversation.user_id != g.user_id:
+        return jsonify({"error": "Forbidden"}), 403
     try:
         stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
         messages = db.session.scalars(stmt).all()
@@ -307,9 +312,11 @@ def get_all_messages(conversation_id):
 @api_bp.route("/chat/<string:conversation_id>", methods=["POST"])
 @jwt_required
 def chat(conversation_id):
-    conv = db.session.get(Conversation, conversation_id)
-    if not conv:
-        return jsonify({"error" : "Not found conversation"}), 404
+    conversation = db.session.get(Conversation, conversation_id)
+    if not conversation:
+        return jsonify({"error" : "Conversation not found"}), 404
+    if conversation.user_id != g.user_id:
+        return jsonify({"error": "Forbidden"}), 403
     
     data = request.get_json() or {}
     message = data.get("message")
