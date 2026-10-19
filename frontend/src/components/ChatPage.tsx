@@ -162,16 +162,39 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         }
     }  
 
+    // Delete error in 4 seconds
+    useEffect(() => {
+        if(!error) return;
+        const timer = setTimeout(() => setError(''), 4000);
+        return () => clearTimeout(timer);
+
+    }, [error])
+
 
     return (
         <main className="flex h-screen bg-[#0f172a] text-white">
+            {error && (
+                    <div
+                        role="alert"
+                        className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-red-500/40 bg-slate-800 px-4 py-3 text-sm text-red-300 shadow-lg"
+                    >
+                        <span>{error}</span>
+                        <button
+                            type="button"
+                            aria-label="Đóng"
+                            onClick={() => setError('')}
+                            className="text-slate-400 hover:text-white"
+                        >
+                            X
+                        </button>
+                    </div>
+            )}
             <aside className="flex flex-col w-64 border-r border-slate-700 p-4">
                 <h2 className="mb-4 text-lg font-semibold">Cuộc trò chuyện</h2>
                 <button
                     onClick={handleCreateNewConversation}
                     className="w-full rounded-lg bg-blue-600 px-3 py-2 text-sm">Cuộc trò chuyện mới
                 </button>
-                {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
                 <div className="mt-4 flex-1 overflow-y-auto custom-scrollbar">
                     {conversations.map((conversation) => {
                         const isSelected = conversation.id === selectedConversationId;
