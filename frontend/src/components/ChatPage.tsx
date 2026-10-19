@@ -1,5 +1,6 @@
 import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation, renameConversation} from "../services/api";
 import {useState, useEffect, type SubmitEvent, useRef} from "react";
+import ReactMarkdown from 'react-markdown';
 
 // Define the Conversation type
 type Conversation = {
@@ -245,12 +246,14 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                 key={index} 
                                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                             >
-                                <div className={`max-w-xl rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                                <div className={`prose prose-invert max-w-xl rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                                     msg.role === 'user' 
                                         ? 'bg-blue-600 text-white rounded-br-xs' 
                                         : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-xs'
                                 }`}>
-                                    {msg.content}
+                                    <ReactMarkdown>
+                                        {msg.content}
+                                    </ReactMarkdown>
                                 </div>
                             </div>
                         ))
