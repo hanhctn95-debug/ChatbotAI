@@ -1,23 +1,29 @@
 import { useEffect, useState } from 'react';
-import AuthPage from './components/AuthPage'
-import ChatPage from './components/ChatPage'
+import AuthPage from './components/AuthPage';
+import ChatPage from './components/ChatPage';
+import { Navigate, Route, Routes } from 'react-router';
 
 function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("access_token"));
   useEffect(() => {
-    console.log("listener đã được cài");
     const handleExpired = () => {
       setToken(null)
-      console.log("nhận được auth:expired");
     };
     window.addEventListener('auth:expired', handleExpired);
     return () => window.removeEventListener('auth:expired', handleExpired)
   }, [])
-  return (
-  <>
-    {!token && (<AuthPage onLoginSuccess={(newToken) => setToken(newToken)}/>)}
-    {token && (<ChatPage onLogoutSuccess={(token) => setToken(token)}/>)}
-  </> );
+  if(!token){
+    return (
+      <AuthPage onLoginSuccess={setToken} />
+    )
+    }
+    return(
+      <Routes>
+        <Route path='/chat' element={<ChatPage onLogoutSuccess={setToken}/>}></Route>
+        <Route path='/chat/:conversationId' element={<ChatPage onLogoutSuccess={setToken}/>}></Route>
+        <Route path='*' element={<Navigate to="/chat" replace/>}></Route>
+      </Routes>
+    )
 }
 
 export default App

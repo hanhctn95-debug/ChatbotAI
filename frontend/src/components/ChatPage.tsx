@@ -1,6 +1,7 @@
 import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation, renameConversation} from "../services/api";
 import {useState, useEffect, type SubmitEvent, useRef} from "react";
 import ReactMarkdown from 'react-markdown';
+import {useParams, useNavigate} from 'react-router';
 
 // Define the Conversation type
 type Conversation = {
@@ -21,13 +22,20 @@ type ChatPageProps = {
 function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [error, setError] = useState('');
-    const [selectedConversationId, setSelectedConversationId] = useState('');
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputMessage, setInputMessage] = useState('');
     const [openMenuId, setOpenMenuId] = useState<string | null>(null); 
     const [newTitle, setNewTile] = useState('');
     const [isRenameModelOpen, setIsRenameModelOpen] = useState(false);
     const [renameId, setRenameId] = useState<string | null>(null)
+
+    // navigate URL by conversation id
+    const {conversationId} = useParams<{conversationId: string}>();
+    const navigate = useNavigate();
+    const selectedConversationId = conversationId ?? '';
+    function setSelectedConversationId(id : string | null){
+        navigate(id ? `/chat/${id}` : `/chat`);
+    }
 
     // Create ref
     const messagesEndRef = useRef<HTMLDivElement>(null);
