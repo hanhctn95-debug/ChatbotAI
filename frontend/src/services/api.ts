@@ -26,6 +26,29 @@ API.interceptors.request.use((config) => {
 });
 
 
+// Create object api error
+export class ApiError extends Error{
+    status: number | undefined;
+    constructor(status: number | undefined, message: string){
+        super(message);
+        this.status = status
+    }
+}
+
+
+// Error response format
+const toApiError = (err: any) => {
+    if(axios.isAxiosError(err)){
+        const serverMessage = err.response?.data?.error ?? err.response?.data?.message;
+        return new ApiError(
+            err.response?.status ?? 0,
+            typeof serverMessage === 'string' ? serverMessage : 'Lỗi kết nối máy chủ')
+    }
+    return new ApiError(undefined, err instanceof Error ? err.message : "Lỗi không xác định");
+}
+
+
+
 type QueueItem = {
     resolve: (token: string) => void,
     reject: (error: unknown) => void
@@ -41,7 +64,7 @@ API.interceptors.response.use(
         const originalRequest = error.config;
         const isExpired = error.response?.status === 401 && error.response?.data?.error === "Token has expired";
         if(!isExpired || !originalRequest || originalRequest._retry){
-            return Promise.reject(error)
+            return Promise.reject(toApiError(error))
         }
         originalRequest._retry = true;
         if(isRefreshing){
@@ -66,11 +89,11 @@ API.interceptors.response.use(
             originalRequest.headers.Authorization = `Bearer ${new_token}`;
             return API(originalRequest);
         }catch(refreshError){
-            pendingQueue.forEach((item) => item.reject(refreshError));
+            pendingQueue.forEach((item) => item.reject(toApiError(refreshError)));
             pendingQueue = [];
             localStorage.removeItem("access_token");
             window.dispatchEvent(new Event("auth:expired"));
-            return Promise.reject(refreshError);
+            return Promise.reject(toApiError(refreshError));
         }finally{
             isRefreshing = false;
         }
@@ -139,6 +162,6 @@ export const register = async (email: string, password: string) => {
 
 // Log out
 export const logout = async () => {
-    const response = await API.post('api/logout')
+    const response = await API.post('/api/logout')
     return response.data
 }
