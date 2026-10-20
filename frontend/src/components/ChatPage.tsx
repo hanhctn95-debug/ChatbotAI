@@ -2,6 +2,7 @@ import {createConversation, getConversations, logout, getMessages, sendMessage, 
 import {useState, useEffect, type SubmitEvent, useRef} from "react";
 import ReactMarkdown from 'react-markdown';
 import {useParams, useNavigate} from 'react-router';
+import remarkGfm from 'remark-gfm';
 
 // Define the Conversation type
 type Conversation = {
@@ -85,7 +86,23 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 const data = await getMessages(selectedConversationId);
                 setMessages(data);
             }catch(error){
-                setError("Đã xảy ra lỗi khi tải tin nhắn");
+                if(error instanceof ApiError){
+                    if(error.status === 500){
+                        setError("Lỗi máy chủ");
+                        return;
+                    }
+                    if(error.status === 403){
+                        setError("Bạn không có quyền truy cập cuộc trò chuyện này");
+                        return;
+                    }
+                    if(error.status === 404){
+                        setError("Cuộc trò chuyện đã bị xóa hoặc không tồn tại");
+                        return;
+                    }
+                    setError("Lỗi không thể tải tin nhắn");
+                    return;
+                }
+                setError("Lỗi không thể tải tin nhắn");
             }
         }
         loadMessages();
@@ -297,7 +314,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                 }
                             >
                                 <div className="prose prose-invert max-w-none [&>p]:my-0">
-                                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                                 </div>
                             </div>
                         </div>
