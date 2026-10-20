@@ -11,7 +11,7 @@ type Conversation = {
 
 type Message = {
     content: string;
-    role: string;
+    role: "user" | "assistant";
 }
 
 type ChatPageProps = {
@@ -274,44 +274,58 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 <header className="flex justify-center border-b border-slate-700 p-4" >
                     <h1 className="text-lg font-semibold">CHATBOT</h1>
                 </header>
-                <div className="flex-1 p-6 overflow-y-auto space-y-4">
+                <div className="flex-1 overflow-y-auto px-4 py-6">
+                <div className="mx-auto w-full max-w-3xl space-y-4">
                     {messages.length === 0 ? (
-                        <div className="flex h-full items-center justify-center text-slate-500">
-                            Chưa có tin nhắn nào. Hãy bắt đầu trò chuyện!
-                        </div>
+                    <div className="flex h-full items-center justify-center text-slate-500">
+                        Chưa có tin nhắn nào. Hãy bắt đầu trò chuyện!
+                    </div>
                     ) : (
-                        messages.map((msg, index) => (
-                            <div 
-                                key={index} 
-                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    messages.map((msg, index) => {
+                        const isUser = msg.role === "user";
+
+                        return (
+                        <div
+                            key={index}
+                            className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
+                        >
+                            <div
+                                className={
+                                    isUser
+                                        ? "ml-auto w-fit max-w-[75%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-sm leading-7 text-white shadow-sm"
+                                        : "w-full text-sm leading-7 text-slate-100"
+                                }
                             >
-                                <div className={`prose prose-invert max-w-xl rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                                    msg.role === 'user' 
-                                        ? 'bg-blue-600 text-white rounded-br-xs' 
-                                        : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-xs'
-                                }`}>
-                                    <ReactMarkdown>
-                                        {msg.content}
-                                    </ReactMarkdown>
+                                <div className="prose prose-invert max-w-none [&>p]:my-0">
+                                    <ReactMarkdown>{msg.content}</ReactMarkdown>
                                 </div>
                             </div>
-                        ))
+                        </div>
+                        );
+                    })
                     )}
                     <div ref={messagesEndRef}></div>
                 </div>
-                <form onSubmit={handleSendMessages} className="flex gap-2 border-t border-slate-700 p-4">
-                    <input 
-                        type="text"
-                        value={inputMessage}
-                        placeholder="Nhập tin nhắn..."
-                        className="flex-1 rounded-lg bg-slate-800 px-4 py-2 outline-none"
-                        onChange={(event) => setInputMessage(event.target.value)}
+                </div>
+                <form
+                onSubmit={handleSendMessages}
+                className="bg-slate-900/80 p-3"
+                >
+                <div className="mx-auto flex max-w-4xl items-center gap-3">
+                    <input
+                    type="text"
+                    value={inputMessage}
+                    placeholder="Nhập tin nhắn..."
+                    className="flex-1 rounded-full border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-blue-500"
+                    onChange={(event) => setInputMessage(event.target.value)}
                     />
-                    <button 
-                        type="submit"
-                        className="rounded-lg bg-blue-600 px-4 py-2">
-                        Gửi
+                    <button
+                    type="submit"
+                    className="rounded-full bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-500"
+                    >
+                    Gửi
                     </button>
+                </div>
                 </form>
             </section>
             {isRenameModelOpen && (
