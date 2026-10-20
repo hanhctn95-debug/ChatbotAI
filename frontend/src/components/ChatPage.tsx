@@ -111,12 +111,20 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     // Handle create new conversation
     async function handleCreateNewConversation(){
         try {
-            const newConversation = await createConversation("Cuộc trò truyện mới");
+            const newConversation = await createConversation("Cuộc trò chuyện mới");
             setConversations((currentConversations) => [newConversation, ...currentConversations]);
             setSelectedConversationId(newConversation.id);
         }catch (error) {
-            setError("Đã xảy ra lỗi khi tạo cuộc trò chuyện mới");
+            if(error instanceof ApiError){
+                if(error.status === 500){
+                    setError("Lỗi máy chủ");
+                    return;
+                }
+                setError("Xảy ra lỗi khi tạo cuộc trò chuyện");
+                return;
             }
+            setError("Xảy ra lỗi khi tạo cuộc trò chuyện");
+        }
     }
 
     // Handle send messages
