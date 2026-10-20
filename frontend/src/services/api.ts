@@ -37,7 +37,7 @@ export class ApiError extends Error{
 
 
 // Error response format
-const toApiError = (err: any) => {
+const toApiError = (err: unknown) => {
     if(axios.isAxiosError(err)){
         const serverMessage = err.response?.data?.error ?? err.response?.data?.message;
         return new ApiError(

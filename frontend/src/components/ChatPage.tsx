@@ -1,4 +1,4 @@
-import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation, renameConversation} from "../services/api";
+import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation, renameConversation, ApiError} from "../services/api";
 import {useState, useEffect, type SubmitEvent, useRef} from "react";
 import ReactMarkdown from 'react-markdown';
 import {useParams, useNavigate} from 'react-router';
@@ -63,7 +63,15 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 const data = await getConversations();
                 setConversations(data);
             }catch (error) {
-                setError("Đã xảy ra lỗi khi tải danh sách cuộc trò chuyện");
+                if(error instanceof ApiError){
+                    if(error.status === 500){
+                        setError("Lỗi máy chủ");
+                        return;
+                    }
+                    setError("Đã xảy ra lỗi khi tải cuộc trò chuyện");
+                    return;
+                }
+                setError("Đã xảy ra lỗi khi tải cuộc trò chuyện");
             }
         }
         loadConversations();
