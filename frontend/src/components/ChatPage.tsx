@@ -28,7 +28,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [openMenuId, setOpenMenuId] = useState<string | null>(null); 
     const [newTitle, setNewTile] = useState('');
     const [isRenameModelOpen, setIsRenameModelOpen] = useState(false);
-    const [renameId, setRenameId] = useState<string | null>(null)
+    const [renameId, setRenameId] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
 
     // navigate URL by conversation id
     const {conversationId} = useParams<{conversationId: string}>();
@@ -135,6 +136,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         let targetConversationId = selectedConversationId;
         const userMessage = inputMessage;
         setInputMessage('');
+        setIsLoading(true);
 
         try{
             if(!targetConversationId){
@@ -154,7 +156,33 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             const newMessage = await sendMessage(targetConversationId, userMessage);
             setMessages((prev) => [...prev, newMessage]);
         }catch(error){
-            setError("Đã xảy ra lỗi khi gửi tin nhắn")
+            if(error instanceof ApiError){
+                if(error.status === 404){
+                    setError("Không tìm thấy cuộc trò chuyện");
+                    return;
+                }
+                if(error.status === 403){
+                    setError("Bạn không có quyền truy cập cuộc trò truyện này");
+                    return;
+                }
+                if(error.status === 400){
+                    setError("Tin nhắn không hợp lệ");
+                    return;
+                }
+                if(error.status === 500){
+                    setError("Lỗi máy chủ");
+                    return;
+                }
+                if(error.status === 502){
+                    setError(error.message);
+                    return;
+                }
+                setError("Lỗi phản hồi từ máy chủ");
+                return;
+            }
+            setError("Lỗi không thể gửi tin nhắn");
+        }finally{
+            setIsLoading(false);
         }
     }
 
@@ -296,7 +324,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 </button>
             </aside>
             <section className="flex flex-1 flex-col">
-                <header className="flex justify-center border-b border-slate-700 p-4" >
+                <header className="flex justify-center  p-4" >
                     <h1 className="text-lg font-semibold">CHATBOT</h1>
                 </header>
                 <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -343,12 +371,14 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                     placeholder="Nhập tin nhắn..."
                     className="flex-1 rounded-full border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-blue-500"
                     onChange={(event) => setInputMessage(event.target.value)}
+                    disabled={isLoading}
                     />
                     <button
                     type="submit"
-                    className="rounded-full bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-500"
+                    className="rounded-full bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+                    disabled={isLoading || !inputMessage.trim()}
                     >
-                    Gửi
+                        {isLoading ? "Đang gửi ..." : "Gửi"}
                     </button>
                 </div>
                 </form>
