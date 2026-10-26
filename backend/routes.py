@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, g, make_response
+from flask import Blueprint, jsonify, request, g, make_response, Response, stream_with_context
 from backend.models import Conversation, User, Message, RefreshToken
 from backend.extensions import db
 from sqlalchemy import select, update
@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import secrets
 import hashlib
 from uuid import uuid4
+import json
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
@@ -312,54 +313,72 @@ def get_all_messages(conversation_id):
 @api_bp.route("/chat/<string:conversation_id>", methods=["POST"])
 @jwt_required
 def chat(conversation_id):
-    conversation = db.session.get(Conversation, conversation_id)
-    if not conversation:
-        return jsonify({"error" : "Conversation not found"}), 404
-    if conversation.user_id != g.user_id:
-        return jsonify({"error": "Forbidden"}), 403
+    try:
+        conversation = db.session.get(Conversation, conversation_id)
+        if not conversation:
+            return jsonify({"error" : "Conversation not found"}), 404
+        if conversation.user_id != g.user_id:
+            return jsonify({"error": "Forbidden"}), 403
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
     
     data = request.get_json() or {}
     message = data.get("message")
-    role = "user"
-    if not message:
+    if not isinstance(message, str) or not message.strip():
         return jsonify({"error" : "missing required field: message"}), 400
-
-    # Save message user to DB
+    
     try:
-        new_message_user = Message(
-            role = role,
-            content = message,
-            conversation_id = conversation_id
-        )
-        db.session.add(new_message_user)
-        db.session.commit()
+        stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(20)
+        recent_message = db.session.scalars(stmt).all()
+        recent_message.reverse()
+
+        contents = []
+        for msg in recent_message:
+            gemini_role = "user" if msg.role == "user" else "model"
+            contents.append({"role" : gemini_role, "parts": [{"text" : msg.content}]})
+        contents.append({"role" : "user", "parts" : [{"text" : message}]})
+        db.session.remove()
     except Exception as e:
         db.session.rollback()
         return jsonify({"error" : str(e)}), 500
+    # Generate function
+    def generate():
+        full_reply = ""
+        try:
+            client = get_client_gemini()
+            response = client.models.generate_content_stream(
+                model="gemini-3.5-flash",
+                contents=contents
+            )
+            for chunk in response:
+                if chunk.text:
+                    full_reply += chunk.text
+                    yield f"data: {json.dumps(chunk.text)}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps(str(e))}\n\n"
+            return
 
-    # Call api gemini to process message
-    try:
-        client = get_client_gemini()
-        response = client.models.generate_content(
-            model="gemini-3.5-flash",
-            contents=message
-        )
-        reply_text = response.text
-    except Exception as e:
-        return jsonify({"error" : str(e),
-                        "message" : "Something went wrong, please try again later"}), 502
-
-    # Save reply to DB
-    try:
-        new_message_assistant = Message(
-            role = "assistant",
-            content = reply_text,
-            conversation_id = conversation_id
-        )
-        db.session.add(new_message_assistant)
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error" : str(e)}), 500
-
-    return jsonify({"content" : reply_text, "role":"assistant"}), 200
+        if not full_reply:
+            yield f"event: error\ndata: {json.dumps("Gemini not response")}\n\n"
+            return
+        try:
+            new_message_user = Message(
+                role = "user",
+                content = message,
+                conversation_id = conversation_id
+            )
+            new_message_assistant = Message(
+                role = "assistant",
+                content = full_reply,
+                conversation_id = conversation_id
+            )
+            db.session.add(new_message_user)
+            db.session.add(new_message_assistant)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            yield f"event: error\ndata: {json.dumps(str(e))}\n\n"
+            return
+        yield f"event: done\ndata: {json.dumps('done')}\n\n"
+    return Response(stream_with_context(generate()), mimetype="text/event-stream")
