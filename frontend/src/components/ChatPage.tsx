@@ -13,6 +13,7 @@ type Conversation = {
 type Message = {
     content: string;
     role: "user" | "assistant";
+    incomplete?: boolean;
 }
 
 type ChatPageProps = {
@@ -138,6 +139,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         setInputMessage('');
         setIsLoading(true);
 
+        let assistantMessageAdded = false;
         try{
             if(!targetConversationId){
                 const newConv = await createConversation(userMessage.slice(0, 25) + "...");
@@ -151,6 +153,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 { role: "user", content: userMessage },
                 { role: "assistant", content: "" },
             ])
+            assistantMessageAdded = true;
+
             setConversations((preConversations) => {
                 const activeConversation = preConversations.find(conv => conv.id === targetConversationId);
                 if(!activeConversation) return preConversations;
@@ -166,10 +170,17 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 });
             });
         }catch(error){
+            if(assistantMessageAdded){
+                setMessages((prev) => {
+                    const lastIndex = prev.length - 1;
+                    const lastMessage = prev[lastIndex];
+                    if(!lastMessage ||lastMessage.role !== "assistant") return prev;
+                    const updated = [...prev];
+                    updated[lastIndex] = {...lastMessage, incomplete: true};
+                    return updated;
+                })
+            }
             if(error instanceof ApiError){
-                setMessages((prev) =>
-                    prev[prev.length - 1]?.content === "" ? prev.slice(0, -1) : prev
-                );
                 if(error.status === 404){
                     setError("Không tìm thấy cuộc trò chuyện");
                     return;
@@ -365,6 +376,11 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                 <div className="prose prose-invert max-w-none [&>p]:my-0">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                                 </div>
+                                {msg.incomplete && (
+                                    <div className="mt-1 text-xs text-red-400">
+                                        Tin nhắn chưa hoàn tất. Vui lòng thử lại.
+                                    </div>
+                                )}
                             </div>
                         </div>
                         );
