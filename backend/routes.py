@@ -360,7 +360,7 @@ def chat(conversation_id):
             return
 
         if not full_reply:
-            yield f"event: error\ndata: {json.dumps("Gemini not response")}\n\n"
+            yield f"event: error\ndata: {json.dumps('Gemini not response')}\n\n"
             return
         try:
             new_message_user = Message(

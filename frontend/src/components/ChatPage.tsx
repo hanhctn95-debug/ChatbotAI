@@ -146,17 +146,30 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 targetConversationId = newConv.id;
             }
 
-            setMessages((prev) => [...prev, {role : "user", content : userMessage}])
+            setMessages((prev) => [
+                ...prev,
+                { role: "user", content: userMessage },
+                { role: "assistant", content: "" },
+            ])
             setConversations((preConversations) => {
                 const activeConversation = preConversations.find(conv => conv.id === targetConversationId);
                 if(!activeConversation) return preConversations;
                 const Conversations = preConversations.filter(conv => conv.id !== targetConversationId);
                 return [activeConversation, ...Conversations]
             })
-            const newMessage = await sendMessage(targetConversationId, userMessage);
-            setMessages((prev) => [...prev, newMessage]);
+            await sendMessage(targetConversationId, userMessage, (chunk) => {
+                setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    updated[updated.length - 1] = { ...last, content: last.content + chunk };
+                    return updated;
+                });
+            });
         }catch(error){
             if(error instanceof ApiError){
+                setMessages((prev) =>
+                    prev[prev.length - 1]?.content === "" ? prev.slice(0, -1) : prev
+                );
                 if(error.status === 404){
                     setError("Không tìm thấy cuộc trò chuyện");
                     return;

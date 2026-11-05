@@ -135,12 +135,12 @@ export const getMessages = async (conversationId : string) => {
 }
 
 // Send message
-export const sendMessage = async (conversationId : string, message : string) => {
-    const response = await API.post(`/api/chat/${conversationId}`, {
-        message : message
-    })
-    return response.data
-}
+// export const sendMessage = async (conversationId : string, message : string) => {
+//     const response = await API.post(`/api/chat/${conversationId}`, {
+//         message : message
+//     })
+//     return response.data
+// }
 
 // Login
 export const login = async (email: string, password: string) => {
@@ -165,3 +165,79 @@ export const logout = async () => {
     const response = await API.post('/api/logout')
     return response.data
 }
+
+
+// Send message (streaming)
+export const sendMessage = async (
+    conversationId: string,
+    message: string,
+    onChunk: (text: string) => void
+) => {
+    const url = `${API.defaults.baseURL}/api/chat/${conversationId}`;
+
+    const doFetch = (token: string | null) =>
+        fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token && { Authorization: `Bearer ${token}` }),
+            },
+            body: JSON.stringify({ message }),
+        });
+
+    let res = await doFetch(localStorage.getItem('access_token'));  
+
+    // Refresh token if expired
+    if (res.status === 401) {
+        const body = await res.clone().json().catch(() => null);
+        if (body?.error === 'Token has expired') {
+            try {
+                const r = await refreshAPI.post('/api/refresh');
+                const newToken = r.data.access_token;
+                localStorage.setItem('access_token', newToken);
+                res = await doFetch(newToken);
+            } catch (e) {
+                localStorage.removeItem('access_token');
+                window.dispatchEvent(new Event('auth:expired'));
+                throw toApiError(e);
+            }
+        }
+    }
+
+    if (!res.ok || !res.body) {
+        const body = await res.json().catch(() => null);
+        throw new ApiError(res.status, body?.error ?? 'Lỗi kết nối máy chủ');
+    }
+
+    // Read stream SSE
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Mỗi sự kiện SSE kết thúc bằng một dòng trống
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? ''; // phần chưa đủ sự kiện, giữ lại cho lần đọc sau
+
+        for (const raw of events) {
+            let event = 'message';
+            let data = '';
+            for (const line of raw.split('\n')) {
+                if (line.startsWith('event: ')) event = line.slice(7);
+                else if (line.startsWith('data: ')) data = line.slice(6);
+            }
+            if (!data) continue;
+
+            const parsed = JSON.parse(data);
+            if (event === 'error') throw new ApiError(500, parsed);
+            if (event === 'done') return;
+            onChunk(parsed);
+        }
+    }
+    throw new ApiError(500, 'SSE failed: Unexpected end of stream');
+};
