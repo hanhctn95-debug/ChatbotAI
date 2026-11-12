@@ -26,7 +26,8 @@ type ChatPageProps = {
 function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [error, setError] = useState('');
-    const [messages, setMessages] = useState<Message[]>([]);
+    //const [messages, setMessages] = useState<Message[]>([]);
+    const [messagesByConversationId, setMessagesByConversationId] = useState<Record<string, Message[]>>({});
     const [inputMessage, setInputMessage] = useState('');
     const [openMenuId, setOpenMenuId] = useState<string | null>(null); 
     const [newTitle, setNewTile] = useState('');
@@ -41,6 +42,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     function setSelectedConversationId(id : string | null){
         navigate(id ? `/chat/${id}` : `/chat`);
     }
+    let messages = messagesByConversationId[selectedConversationId] ?? [];
 
     // Create ref
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -88,7 +90,10 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         async function loadMessages() {
             try{
                 const data = await getMessages(selectedConversationId);
-                setMessages(data);
+                setMessagesByConversationId((prev) => {
+                    if(prev[selectedConversationId] !== undefined) return prev;
+                    return {...prev, [selectedConversationId]: data};
+                });
             }catch(error){
                 if(error instanceof ApiError){
                     if(error.status === 500){
@@ -152,11 +157,14 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 targetConversationId = newConv.id;
             }
 
-            setMessages((prev) => [
-                ...prev,
-                { role: "user", content: userMessage },
-                { role: "assistant", content: "", requestId },
-            ])
+            setMessagesByConversationId((prev) => {
+                const updated = prev[targetConversationId] ? [...prev[targetConversationId]] : [];
+                return { ...prev, [targetConversationId]:
+                    [...updated, 
+                    {role: "user", content: userMessage},
+                    {role: "assistant", content: "", requestId}]
+                };
+        });
             assistantMessageAdded = true;
 
             setConversations((preConversations) => {
@@ -166,23 +174,23 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 return [activeConversation, ...Conversations]
             })
             await sendMessage(targetConversationId, userMessage, requestId, (chunk) => {
-                setMessages((prev) => {
-                    const updated = [...prev];
+                setMessagesByConversationId((prev) => {
+                    const updated = [...prev[targetConversationId]];
                     const last = updated[updated.length - 1];
                     updated[updated.length - 1] = { ...last, content: last.content + chunk };
-                    return updated;
+                    return {...prev, [targetConversationId]: updated};
                 });
             });
         }catch(error){
             if(assistantMessageAdded){
                 // Keep the partial reply visible and mark it as retryable.
-                setMessages((prev) => {
-                    const lastIndex = prev.length - 1;
-                    const lastMessage = prev[lastIndex];
+                setMessagesByConversationId((prev) => {
+                    const lastIndex = prev[targetConversationId].length - 1;
+                    const lastMessage = prev[targetConversationId][lastIndex];
                     if(!lastMessage ||lastMessage.role !== "assistant") return prev;
-                    const updated = [...prev];
+                    const updated = [...prev[targetConversationId]];
                     updated[lastIndex] = {...lastMessage, incomplete: true};
-                    return updated;
+                    return {...prev, [targetConversationId]: updated};
                 })
             }
             if(error instanceof ApiError){
@@ -215,6 +223,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         }
     }
 
+    // Retry a message when incomplete
     async function handleRetryMessage(assistantIndex: number) {
         // The user message is immediately before the assistant; its request ID identifies this send.
         const assistantMessage = messages[assistantIndex];
@@ -231,12 +240,14 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         setIsLoading(true);
         setError("");
         // Clear the partial reply before replaying or regenerating the response.
-        setMessages((prev) =>
-            prev.map((item, index) =>
+        setMessagesByConversationId((prev) => {
+            const updated = prev[selectedConversationId].map((item, index) =>
                 index === assistantIndex
                     ? { ...item, content: "", incomplete: true, retrying: true }
                     : item
             )
+            return { ...prev, [selectedConversationId]: updated};
+        }
         );
 
         try {
@@ -248,22 +259,26 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                         userMessage.content,
                         requestId,
                         (chunk) => {
-                            setMessages((prev) =>
-                                prev.map((item, index) =>
+                            setMessagesByConversationId((prev) => {
+                                const updated = [...prev[selectedConversationId]].map((item, index) =>
                                     index === assistantIndex
                                         ? { ...item, content: item.content + chunk }
                                         : item
                                 )
+                                return { ...prev, [selectedConversationId]: updated};
+                            }
                             );
                         }
                     );
                     // sendMessage resolves only after the SSE done event arrives.
-                    setMessages((prev) =>
-                        prev.map((item, index) =>
+                    setMessagesByConversationId((prev) => {
+                        const updated = [...prev[selectedConversationId]].map((item, index) =>
                             index === assistantIndex
                                 ? { ...item, incomplete: false }
                                 : item
                         )
+                        return { ...prev, [selectedConversationId]: updated};
+                    }
                     );
                     return;
                 } catch (retryError) {
@@ -279,12 +294,14 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 }
             }
         } catch (retryError) {
-            setMessages((prev) =>
-                prev.map((item, index) =>
+            setMessagesByConversationId((prev) => {
+                const updated = [...prev[selectedConversationId]].map((item, index) =>
                     index === assistantIndex
                         ? { ...item, incomplete: true, retrying: false }
                         : item
                 )
+                return { ...prev, [selectedConversationId]: updated };
+            }
             );
             if (retryError instanceof ApiError && retryError.code === "processing") {
                 setError("Yêu cầu vẫn đang xử lý. Vui lòng thử lại sau.");
@@ -296,11 +313,12 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 );
             }
         } finally {
-            setMessages((prev) =>
-                prev.map((item, index) =>
+            setMessagesByConversationId((prev) => {
+                const updated = [...prev[selectedConversationId]].map((item, index) =>
                     index === assistantIndex ? { ...item, retrying: false } : item
-                )
-            );
+                );
+                return { ...prev, [selectedConversationId]: updated };
+            });
             setIsLoading(false);
         }
     }
@@ -329,7 +347,11 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             return preConversations.filter(conv => conv.id !== idToDelete)
         })
         if(selectedConversationId === openMenuId){
-            setMessages([]);
+            setMessagesByConversationId(prev => {
+                const updated = {...prev};
+                delete updated[idToDelete];
+                return updated;
+            });
             setSelectedConversationId('');
         }
     }
