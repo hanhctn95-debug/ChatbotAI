@@ -1,6 +1,6 @@
 from uuid import uuid4
 from sqlalchemy.orm import mapped_column, Mapped, relationship
-from sqlalchemy import DateTime, func, ForeignKey, String ,Text
+from sqlalchemy import DateTime, func, ForeignKey, String ,Text, UniqueConstraint
 from datetime import datetime
 from backend.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -55,6 +55,9 @@ class Conversation(db.Model):
 
 class Message(db.Model):
     __tablename__ = 'messages'
+    __table_args__ = (
+        UniqueConstraint('conversation_id', 'request_id', 'role', name='unique_message_request'),
+    )
     id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()), primary_key=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -64,6 +67,7 @@ class Message(db.Model):
         server_default=func.now(),
         nullable=False
     )
+    request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     conversation = relationship("Conversation", back_populates="messages")
 
     def to_dict(self):
@@ -90,3 +94,26 @@ class RefreshToken(db.Model):
     family_id: Mapped[str] = mapped_column(String(36), nullable=False) 
 
     user = relationship("User", back_populates="refresh_tokens")
+
+
+class ChatRequest(db.Model):
+    __tablename__ = "chat_requests"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("conversations.id"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

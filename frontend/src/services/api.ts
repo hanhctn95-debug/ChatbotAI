@@ -29,9 +29,11 @@ API.interceptors.request.use((config) => {
 // Create object api error
 export class ApiError extends Error{
     status: number | undefined;
-    constructor(status: number | undefined, message: string){
+    code: string | undefined;
+    constructor(status: number | undefined, message: string, code?: string){
         super(message);
         this.status = status
+        this.code = code
     }
 }
 
@@ -171,6 +173,7 @@ export const logout = async () => {
 export const sendMessage = async (
     conversationId: string,
     message: string,
+    requestId: string,
     onChunk: (text: string) => void
 ) => {
     const url = `${API.defaults.baseURL}/api/chat/${conversationId}`;
@@ -183,7 +186,7 @@ export const sendMessage = async (
                 'Content-Type': 'application/json',
                 ...(token && { Authorization: `Bearer ${token}` }),
             },
-            body: JSON.stringify({ message }),
+            body: JSON.stringify({ message, request_id: requestId }),
         });
 
     let res = await doFetch(localStorage.getItem('access_token'));  
@@ -207,7 +210,11 @@ export const sendMessage = async (
 
     if (!res.ok || !res.body) {
         const body = await res.json().catch(() => null);
-        throw new ApiError(res.status, body?.error ?? 'Lỗi kết nối máy chủ');
+        throw new ApiError(
+            res.status,
+            body?.error ?? 'Lỗi kết nối máy chủ',
+            body?.status
+        );
     }
 
     // Read stream SSE

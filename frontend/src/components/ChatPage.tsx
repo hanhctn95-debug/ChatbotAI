@@ -14,6 +14,8 @@ type Message = {
     content: string;
     role: "user" | "assistant";
     incomplete?: boolean;
+    retrying?: boolean;
+    requestId?: string;
 }
 
 type ChatPageProps = {
@@ -138,6 +140,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         const userMessage = inputMessage;
         setInputMessage('');
         setIsLoading(true);
+        // Give each new send a unique ID; retries reuse the ID stored on its assistant message.
+        const requestId = crypto.randomUUID();
 
         let assistantMessageAdded = false;
         try{
@@ -151,7 +155,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             setMessages((prev) => [
                 ...prev,
                 { role: "user", content: userMessage },
-                { role: "assistant", content: "" },
+                { role: "assistant", content: "", requestId },
             ])
             assistantMessageAdded = true;
 
@@ -161,7 +165,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 const Conversations = preConversations.filter(conv => conv.id !== targetConversationId);
                 return [activeConversation, ...Conversations]
             })
-            await sendMessage(targetConversationId, userMessage, (chunk) => {
+            await sendMessage(targetConversationId, userMessage, requestId, (chunk) => {
                 setMessages((prev) => {
                     const updated = [...prev];
                     const last = updated[updated.length - 1];
@@ -171,6 +175,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             });
         }catch(error){
             if(assistantMessageAdded){
+                // Keep the partial reply visible and mark it as retryable.
                 setMessages((prev) => {
                     const lastIndex = prev.length - 1;
                     const lastMessage = prev[lastIndex];
@@ -206,6 +211,96 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             }
             setError("Lỗi không thể gửi tin nhắn");
         }finally{
+            setIsLoading(false);
+        }
+    }
+
+    async function handleRetryMessage(assistantIndex: number) {
+        // The user message is immediately before the assistant; its request ID identifies this send.
+        const assistantMessage = messages[assistantIndex];
+        const userMessage = messages[assistantIndex - 1];
+        const requestId = assistantMessage?.requestId;
+
+        if (isLoading || !selectedConversationId) return;
+        if (assistantMessage?.role !== "assistant" || !assistantMessage.incomplete) return;
+        if (!requestId || !userMessage || userMessage.role !== "user") {
+            setError("Không tìm thấy thông tin yêu cầu để thử lại");
+            return;
+        }
+
+        setIsLoading(true);
+        setError("");
+        // Clear the partial reply before replaying or regenerating the response.
+        setMessages((prev) =>
+            prev.map((item, index) =>
+                index === assistantIndex
+                    ? { ...item, content: "", incomplete: true, retrying: true }
+                    : item
+            )
+        );
+
+        try {
+            // A 409/processing response means the original request is active; poll with the same ID.
+            for (let attempt = 0; attempt < 100; attempt++) {
+                try {
+                    await sendMessage(
+                        selectedConversationId,
+                        userMessage.content,
+                        requestId,
+                        (chunk) => {
+                            setMessages((prev) =>
+                                prev.map((item, index) =>
+                                    index === assistantIndex
+                                        ? { ...item, content: item.content + chunk }
+                                        : item
+                                )
+                            );
+                        }
+                    );
+                    // sendMessage resolves only after the SSE done event arrives.
+                    setMessages((prev) =>
+                        prev.map((item, index) =>
+                            index === assistantIndex
+                                ? { ...item, incomplete: false }
+                                : item
+                        )
+                    );
+                    return;
+                } catch (retryError) {
+                    // Poll again only for processing responses; surface other errors to the user.
+                    if (
+                        !(retryError instanceof ApiError) ||
+                        retryError.code !== "processing" ||
+                        attempt === 99
+                    ) {
+                        throw retryError;
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, 1500));
+                }
+            }
+        } catch (retryError) {
+            setMessages((prev) =>
+                prev.map((item, index) =>
+                    index === assistantIndex
+                        ? { ...item, incomplete: true, retrying: false }
+                        : item
+                )
+            );
+            if (retryError instanceof ApiError && retryError.code === "processing") {
+                setError("Yêu cầu vẫn đang xử lý. Vui lòng thử lại sau.");
+            } else {
+                setError(
+                    retryError instanceof ApiError
+                        ? retryError.message
+                        : "Lỗi không thể gửi tin nhắn"
+                );
+            }
+        } finally {
+            setMessages((prev) =>
+                prev.map((item, index) =>
+                    index === assistantIndex ? { ...item, retrying: false } : item
+                )
+            );
             setIsLoading(false);
         }
     }
@@ -376,9 +471,43 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                 <div className="prose prose-invert max-w-none [&>p]:my-0">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                                 </div>
-                                {msg.incomplete && (
-                                    <div className="mt-1 text-xs text-red-400">
-                                        Tin nhắn chưa hoàn tất. Vui lòng thử lại.
+                                {/* Show retry controls only for incomplete replies. */}
+                                {(msg.incomplete || msg.retrying) && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                        {msg.retrying ? (
+                                            <span className="text-xs text-slate-400">
+                                                Đang thử lại, vui lòng chờ...
+                                            </span>
+                                        ) : (
+                                            <>
+                                                <span className="text-xs text-slate-400">
+                                                    Phản hồi chưa hoàn tất
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    disabled={isLoading}
+                                                    onClick={() => handleRetryMessage(index)}
+                                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-600 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-slate-400 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    aria-label="Thử lại phản hồi"
+                                                >
+                                                    <svg
+                                                        aria-hidden="true"
+                                                        viewBox="0 0 16 16"
+                                                        fill="none"
+                                                        className="h-3.5 w-3.5"
+                                                    >
+                                                        <path
+                                                            d="M13.2 6A5.5 5.5 0 0 0 3.1 4.2L2 5.5M2 5.5V2.8M2 5.5h2.7M2.8 10A5.5 5.5 0 0 0 12.9 11.8L14 10.5m0 0v2.7m0-2.7h-2.7"
+                                                            stroke="currentColor"
+                                                            strokeWidth="1.4"
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                        />
+                                                    </svg>
+                                                    Thử lại
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                             </div>

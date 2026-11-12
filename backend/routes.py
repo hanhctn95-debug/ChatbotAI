@@ -1,7 +1,8 @@
-from flask import Blueprint, jsonify, request, g, make_response, Response, stream_with_context
-from backend.models import Conversation, User, Message, RefreshToken
+from flask import Blueprint, current_app, jsonify, request, g, make_response, Response, stream_with_context
+from backend.models import Conversation, User, Message, RefreshToken, ChatRequest
 from backend.extensions import db
 from sqlalchemy import select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 import os
 from dotenv import load_dotenv
 from google import genai
@@ -10,13 +11,12 @@ from functools import wraps
 from datetime import datetime, timedelta, timezone
 import secrets
 import hashlib
-from uuid import uuid4
+from uuid import uuid4, UUID
 import json
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 secret_key = os.getenv("JWT_SECRET_KEY")
-
 api_bp = Blueprint("conversation", __name__, url_prefix="/api")
 
 def get_client_gemini():
@@ -301,7 +301,7 @@ def get_all_messages(conversation_id):
     if conversation.user_id != g.user_id:
         return jsonify({"error": "Forbidden"}), 403
     try:
-        stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc())
+        stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.asc(), Message.role.desc())
         messages = db.session.scalars(stmt).all()
         return jsonify([message.to_dict() for message in messages]), 200
     except Exception as e:
@@ -325,9 +325,133 @@ def chat(conversation_id):
     
     data = request.get_json() or {}
     message = data.get("message")
+    request_id = data.get("request_id")
+
+    # Check required fields
     if not isinstance(message, str) or not message.strip():
         return jsonify({"error" : "missing required field: message"}), 400
-    
+    if not isinstance(request_id, str):
+        return jsonify({"error" : "missing required field: request_id"}), 400
+    try:
+        request_id = str(UUID(request_id))
+    except ValueError:
+        return jsonify({"error" : "Invalid request_id"}), 400
+
+    # Retries reuse this ID so a failed request can be processed again.
+    def mark_request_failed():
+        try:
+            db.session.execute(
+                update(ChatRequest)
+                .where(
+                    ChatRequest.request_id == request_id,
+                    ChatRequest.status == "processing",
+                )
+                .values(
+                    status="failed",
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception(
+                "Could not mark chat request %s as failed", request_id
+            )
+
+    # Replay the saved reply for finished requests without calling Gemini again.
+    def replay_finished_request():
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.request_id == request_id,
+            Message.role == "user",
+        )
+        saved_user_message = db.session.scalar(stmt)
+        if not saved_user_message or saved_user_message.content != message:
+            return jsonify({"error": "The saved data is missing or does not match the request"}), 409
+
+        stmt = select(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.request_id == request_id,
+            Message.role == "assistant",
+        )
+        saved_message = db.session.scalar(stmt)
+        if not saved_message:
+            return jsonify({"error": "Finished request has no saved reply"}), 500
+        saved_reply = saved_message.content
+
+        def replay():
+            yield f"data: {json.dumps(saved_reply)}\n\n"
+            yield f"event: done\ndata: {json.dumps('done')}\n\n"
+
+        return Response(stream_with_context(replay()), mimetype="text/event-stream")
+
+    # Atomically claim a new request so duplicate IDs do not call Gemini concurrently.
+    try:
+        existing_request = db.session.get(ChatRequest, request_id)
+        # Only the request that inserted the row owns the initial processing attempt.
+        owns_request = False
+
+        if existing_request is None:
+            result = db.session.execute(
+                sqlite_insert(ChatRequest)
+                .values(
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    status="processing",
+                )
+                .on_conflict_do_nothing(index_elements=["request_id"])
+            )
+            db.session.commit()
+            owns_request = result.rowcount == 1
+            existing_request = db.session.get(ChatRequest, request_id)
+
+        if existing_request is None:
+            raise RuntimeError("Chat request could not be created or loaded")
+        if existing_request.conversation_id != conversation_id:
+            return jsonify({"error": "request_id belongs to another conversation"}), 409
+
+        if existing_request.status == "finished":
+            return replay_finished_request()
+        # An active request is already being processed; do not call Gemini again.
+        if existing_request.status == "processing" and not owns_request:
+            return jsonify({
+                "status": "processing",
+                "error": "This request is still processing",
+            }), 409
+        # Retry a failed request by claiming it before calling Gemini again.
+        elif existing_request.status == "failed":
+            result = db.session.execute(
+                update(ChatRequest)
+                .where(
+                    ChatRequest.request_id == request_id,
+                    ChatRequest.conversation_id == conversation_id,
+                    ChatRequest.status == "failed",
+                )
+                .values(
+                    status="processing",
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
+            db.session.commit()
+            owns_request = result.rowcount == 1
+            if not owns_request:
+                existing_request = db.session.get(ChatRequest, request_id)
+                if existing_request and existing_request.status == "finished":
+                    return replay_finished_request()
+                return jsonify({
+                    "status": "processing",
+                    "error": "This request is still processing",
+                }), 409
+        if not owns_request:
+            return jsonify({
+                "status": existing_request.status,
+                "error": "Request cannot be processed in its current state",
+            }), 409
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error" : str(e)}), 500
+
+    # Load chat context before Gemini; failures here can also be retried with the same ID.
     try:
         stmt = select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(20)
         recent_message = db.session.scalars(stmt).all()
@@ -341,11 +465,14 @@ def chat(conversation_id):
         db.session.remove()
     except Exception as e:
         db.session.rollback()
+        mark_request_failed()
         return jsonify({"error" : str(e)}), 500
-    # Generate function
+
+    # Stream Gemini chunks to the client and mark the request failed if generation errors.
     def generate():
         full_reply = ""
         try:
+            # raise RuntimeError("TEST: simulated Gemini failure")
             client = get_client_gemini()
             response = client.models.generate_content_stream(
                 model="gemini-3.5-flash",
@@ -355,30 +482,51 @@ def chat(conversation_id):
                 if chunk.text:
                     full_reply += chunk.text
                     yield f"data: {json.dumps(chunk.text)}\n\n"
+        except GeneratorExit:
+            mark_request_failed()
+            raise
         except Exception as e:
+            mark_request_failed()
             yield f"event: error\ndata: {json.dumps(str(e))}\n\n"
             return
 
         if not full_reply:
+            mark_request_failed()
             yield f"event: error\ndata: {json.dumps('Gemini not response')}\n\n"
             return
         try:
+            # Save both messages and the finished status in one transaction.
             new_message_user = Message(
                 role = "user",
                 content = message,
-                conversation_id = conversation_id
+                conversation_id = conversation_id,
+                request_id = request_id
             )
             new_message_assistant = Message(
                 role = "assistant",
                 content = full_reply,
-                conversation_id = conversation_id
+                conversation_id = conversation_id,
+                request_id = request_id
             )
             db.session.add(new_message_user)
             db.session.add(new_message_assistant)
+            db.session.execute(
+                update(ChatRequest)
+                .where(
+                    ChatRequest.request_id == request_id,
+                    ChatRequest.status == "processing",
+                )
+                .values(
+                    status="finished",
+                    updated_at=datetime.now(timezone.utc),
+                )
+            )
             db.session.commit()
         except Exception as e:
             db.session.rollback()
+            mark_request_failed()
             yield f"event: error\ndata: {json.dumps(str(e))}\n\n"
             return
+        # Report success only after the reply and finished status are committed.
         yield f"event: done\ndata: {json.dumps('done')}\n\n"
     return Response(stream_with_context(generate()), mimetype="text/event-stream")
