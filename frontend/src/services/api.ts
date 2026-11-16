@@ -109,11 +109,16 @@ export const getConversations = async () => {
 }
 
 // Create conversation
-export const createConversation = async (title:string) => {
-    const response = await API.post('/api/conversations', {
-        title : title,
-    });
+export const createConversation = async () => {
+    const response = await API.post('/api/conversations');
     return response.data;
+}
+
+// Generate title
+export const generateTitle = async (conversationId: string, userMessage: string) => {
+    const response = await API.post(`/api/conversations/generate-title/${conversationId}`,
+        {user_message: userMessage})
+    return response.data
 }
 
 // Delete conversation

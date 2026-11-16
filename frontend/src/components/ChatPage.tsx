@@ -1,4 +1,4 @@
-import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation, renameConversation, ApiError} from "../services/api";
+import {createConversation, getConversations, logout, getMessages, sendMessage, deleteConversation, renameConversation, ApiError, generateTitle} from "../services/api";
 import {useState, useEffect, type SubmitEvent, useRef} from "react";
 import ReactMarkdown from 'react-markdown';
 import {useParams, useNavigate} from 'react-router';
@@ -120,9 +120,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     // Handle create new conversation
     async function handleCreateNewConversation(){
         try {
-            const newConversation = await createConversation("Cuộc trò chuyện mới");
-            setConversations((currentConversations) => [newConversation, ...currentConversations]);
-            setSelectedConversationId(newConversation.id);
+            setSelectedConversationId("")
         }catch (error) {
             if(error instanceof ApiError){
                 if(error.status === 500){
@@ -142,6 +140,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         if (!inputMessage.trim()) return;
 
         let targetConversationId = selectedConversationId;
+        const isNewConversation = !targetConversationId;
         const userMessage = inputMessage;
         setInputMessage('');
         setIsLoading(true);
@@ -150,11 +149,14 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
 
         let assistantMessageAdded = false;
         try{
-            if(!targetConversationId){
-                const newConv = await createConversation(userMessage.slice(0, 25) + "...");
-                setConversations((prev) => [newConv, ...prev]);
-                setSelectedConversationId(newConv.id);
+            if(isNewConversation){
+                const newConv = await createConversation();
                 targetConversationId = newConv.id;
+                setConversations((prev) => [
+                    newConv,
+                    ...prev
+                ]);
+                setSelectedConversationId(newConv.id)
             }
 
             setMessagesByConversationId((prev) => {
@@ -167,12 +169,26 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         });
             assistantMessageAdded = true;
 
-            setConversations((preConversations) => {
-                const activeConversation = preConversations.find(conv => conv.id === targetConversationId);
-                if(!activeConversation) return preConversations;
-                const Conversations = preConversations.filter(conv => conv.id !== targetConversationId);
-                return [activeConversation, ...Conversations]
-            })
+            // Move the active conversation to the top of the list.
+            if(!isNewConversation){
+                setConversations((preConversations) => {
+                    const activeConversation = preConversations.find(conv => conv.id === targetConversationId);
+                    if(!activeConversation) return preConversations;
+                    const Conversations = preConversations.filter(conv => conv.id !== targetConversationId);
+                    return [activeConversation, ...Conversations]
+                })
+            }
+
+            if(isNewConversation){
+                void generateTitle(targetConversationId, userMessage).then(
+                    (data) => {
+                        setConversations((prev) => 
+                            prev.map((conv) => conv.id === targetConversationId ? {...conv, title: data.title} : conv));
+                    }
+                ).catch(() => {
+                    setError("Lỗi sinh tiêu đề cuộc trò truyện")
+                })
+            }
             await sendMessage(targetConversationId, userMessage, requestId, (chunk) => {
                 setMessagesByConversationId((prev) => {
                     const updated = [...prev[targetConversationId]];

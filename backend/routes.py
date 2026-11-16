@@ -236,9 +236,8 @@ def get_all_conversations():
 @api_bp.route("/conversations", methods=["POST"])
 @jwt_required
 def add_conversation():
-    data = request.get_json() or {}
     conv = Conversation(
-        title = data.get("title", "Cuộc trò truyện mới"),
+        title = "",
         user_id = g.user_id
     )
     try:
@@ -275,7 +274,7 @@ def generate_title(conversation_id):
             contents=f"""
                 Câu hỏi của người dùng: {user_message}
                 Nhiệm vụ: đặt tiêu đề cho một cuộc trò truyện dựa trên tin nhắn đầu tin với quy tắc:
-                - Tối đa 25 ký tự, ngắn gọn, nêu đúng chủ đề chính.
+                - Tối đa 28 ký tự, ngắn gọn, nêu đúng chủ đề chính.
                 - Viết cùng ngôn ngữ với tin nhắn của người dùng.
                 - Chỉ trả về đúng tiêu đề: không dấu ngoặc kép, không dấu chấm cuối, không giải thích, không tiền tố như "Tiêu đề:".
                 - Không trả lời câu hỏi của người dùng, chỉ đặt tên.
@@ -286,8 +285,8 @@ def generate_title(conversation_id):
 
     try:
         title_gen = (response.text or "").strip()
-        if not title_gen or len(title_gen) == 0 or len(title_gen) > 25:
-            title_gen = "Cuộc trò truyện mới"
+        if not title_gen or len(title_gen) == 0 or len(title_gen) > 30:
+            title_gen = "Cuộc trò chuyện mới"
         conv.title = title_gen
         db.session.commit()
         return jsonify({"title" : title_gen})
