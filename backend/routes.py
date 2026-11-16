@@ -250,6 +250,52 @@ def add_conversation():
         return jsonify({"errors" : str(e)}), 500
 
 
+#Generate title
+@api_bp.route("/conversations/generate-title/<string:conversation_id>", methods = ["POST"])
+@jwt_required
+def generate_title(conversation_id):
+    data = request.get_json() or {}
+    user_message = data.get("user_message")
+    if not user_message or not isinstance(user_message, str) or not user_message.strip():
+        return jsonify({"error": "missing required field: user_message"}), 400
+    try:
+        conv = db.session.get(Conversation, conversation_id)
+        if not conv:
+            return jsonify({"error": "Conversation not found"}), 404
+        if conv.user_id != g.user_id:
+            return jsonify({"error": "Forbidden"}), 403
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    try:
+        client = get_client_gemini()
+        response = client.models.generate_content(
+            model="gemini-3.5-flash-lite",
+            contents=f"""
+                Câu hỏi của người dùng: {user_message}
+                Nhiệm vụ: đặt tiêu đề cho một cuộc trò truyện dựa trên tin nhắn đầu tin với quy tắc:
+                - Tối đa 25 ký tự, ngắn gọn, nêu đúng chủ đề chính.
+                - Viết cùng ngôn ngữ với tin nhắn của người dùng.
+                - Chỉ trả về đúng tiêu đề: không dấu ngoặc kép, không dấu chấm cuối, không giải thích, không tiền tố như "Tiêu đề:".
+                - Không trả lời câu hỏi của người dùng, chỉ đặt tên.
+            """)
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error" : "Could not generate conversation title"}), 502
+
+    try:
+        title_gen = (response.text or "").strip()
+        if not title_gen or len(title_gen) == 0 or len(title_gen) > 25:
+            title_gen = "Cuộc trò truyện mới"
+        conv.title = title_gen
+        db.session.commit()
+        return jsonify({"title" : title_gen})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
 # Delete one conversation
 @api_bp.route("/conversations/<string:conversation_id>", methods=["DELETE"])
 @jwt_required
