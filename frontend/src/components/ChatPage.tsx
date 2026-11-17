@@ -34,6 +34,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [isRenameModelOpen, setIsRenameModelOpen] = useState(false);
     const [renameId, setRenameId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const activeAbortControllerRef = useRef<AbortController | null>(null);
 
     // navigate URL by conversation id
     const {conversationId} = useParams<{conversationId: string}>();
@@ -42,6 +43,31 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     function setSelectedConversationId(id : string | null){
         navigate(id ? `/chat/${id}` : `/chat`);
     }
+
+    function removeRequestMessages(conversationId: string, requestId: string) {
+    setMessagesByConversationId((prev) => {
+        const current = prev[conversationId] ?? [];
+        const assistantIndex = current.findIndex(
+            (message) =>
+                message.role === "assistant" && message.requestId === requestId
+        );
+
+        if (
+            assistantIndex <= 0 ||
+            current[assistantIndex - 1].role !== "user"
+        ) {
+            return prev;
+        }
+
+        const updated = current.filter(
+            (_, index) =>
+                index !== assistantIndex && index !== assistantIndex - 1
+        );
+
+        return { ...prev, [conversationId]: updated };
+    });
+}
+
     let messages = messagesByConversationId[selectedConversationId] ?? [];
 
     // Create ref
@@ -148,6 +174,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         const requestId = crypto.randomUUID();
 
         let assistantMessageAdded = false;
+        const abortController = new AbortController();
+        activeAbortControllerRef.current = abortController;
         try{
             if(isNewConversation){
                 const newConv = await createConversation();
@@ -196,8 +224,13 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                     updated[updated.length - 1] = { ...last, content: last.content + chunk };
                     return {...prev, [targetConversationId]: updated};
                 });
-            });
+            }, abortController.signal);
         }catch(error){
+            if (abortController.signal.aborted) {
+                removeRequestMessages(targetConversationId, requestId);
+                setInputMessage(userMessage);
+                return;
+            }
             if(assistantMessageAdded){
                 // Keep the partial reply visible and mark it as retryable.
                 setMessagesByConversationId((prev) => {
@@ -235,6 +268,9 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
             }
             setError("Lỗi không thể gửi tin nhắn");
         }finally{
+            if (activeAbortControllerRef.current === abortController) {
+                activeAbortControllerRef.current = null;
+            }
             setIsLoading(false);
         }
     }
@@ -266,6 +302,8 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         }
         );
 
+        const abortController = new AbortController();
+        activeAbortControllerRef.current = abortController;
         try {
             // A 409/processing response means the original request is active; poll with the same ID.
             for (let attempt = 0; attempt < 100; attempt++) {
@@ -284,7 +322,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                                 return { ...prev, [selectedConversationId]: updated};
                             }
                             );
-                        }
+                        }, abortController.signal
                     );
                     // sendMessage resolves only after the SSE done event arrives.
                     setMessagesByConversationId((prev) => {
@@ -298,6 +336,12 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                     );
                     return;
                 } catch (retryError) {
+                    if (abortController.signal.aborted) {
+                        removeRequestMessages(selectedConversationId, requestId);
+                        setInputMessage(userMessage.content);
+                        return;
+                    }
+
                     // Poll again only for processing responses; surface other errors to the user.
                     if (
                         !(retryError instanceof ApiError) ||
@@ -329,6 +373,9 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 );
             }
         } finally {
+            if (activeAbortControllerRef.current === abortController) {
+                activeAbortControllerRef.current = null;
+            }
             setMessagesByConversationId((prev) => {
                 const updated = [...prev[selectedConversationId]].map((item, index) =>
                     index === assistantIndex ? { ...item, retrying: false } : item
@@ -560,22 +607,55 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 onSubmit={handleSendMessages}
                 className="bg-slate-900/80 p-3"
                 >
-                <div className="mx-auto flex max-w-4xl items-center gap-3">
+                <div className="mx-auto flex max-w-4xl items-center gap-2 rounded-3xl border border-slate-600 bg-slate-800 px-3 py-2 focus-within:border-blue-500">
                     <input
-                    type="text"
-                    value={inputMessage}
-                    placeholder="Nhập tin nhắn..."
-                    className="flex-1 rounded-full border border-slate-600 bg-slate-800 px-4 py-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-blue-500"
-                    onChange={(event) => setInputMessage(event.target.value)}
-                    disabled={isLoading}
+                        type="text"
+                        value={inputMessage}
+                        placeholder="Nhập tin nhắn..."
+                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-[15px] leading-5 text-white outline-none placeholder:text-slate-400"
+                        onChange={(event) => setInputMessage(event.target.value)}
+                        disabled={isLoading}
                     />
-                    <button
-                    type="submit"
-                    className="rounded-full bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
-                    disabled={isLoading || !inputMessage.trim()}
-                    >
-                        {isLoading ? "Đang gửi ..." : "Gửi"}
-                    </button>
+
+                    {isLoading ? (
+                        <button
+                            key="stop"
+                            type="button"
+                            onClick={(event) => {
+                                event.preventDefault();
+                                activeAbortControllerRef.current?.abort();
+                            }}
+                            aria-label="Dừng tạo phản hồi"
+                            title="Dừng"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-slate-900 hover:bg-slate-200"
+                        >
+                            <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4 fill-current">
+                                <rect x="3" y="3" width="10" height="10" rx="1.5" />
+                            </svg>
+                        </button>
+                    ) : (
+                        <button
+                            key="send"
+                            type="submit"
+                            disabled={!inputMessage.trim()}
+                            aria-label="Gửi tin nhắn"
+                            title="Gửi"
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-slate-900 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className="h-5 w-5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M12 19V5M5 12l7-7 7 7" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
                 </form>
             </section>

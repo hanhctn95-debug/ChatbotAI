@@ -179,7 +179,8 @@ export const sendMessage = async (
     conversationId: string,
     message: string,
     requestId: string,
-    onChunk: (text: string) => void
+    onChunk: (text: string) => void,
+    signal?: AbortSignal
 ) => {
     const url = `${API.defaults.baseURL}/api/chat/${conversationId}`;
 
@@ -192,6 +193,7 @@ export const sendMessage = async (
                 ...(token && { Authorization: `Bearer ${token}` }),
             },
             body: JSON.stringify({ message, request_id: requestId }),
+            signal,
         });
 
     let res = await doFetch(localStorage.getItem('access_token'));  

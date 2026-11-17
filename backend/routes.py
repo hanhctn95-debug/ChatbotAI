@@ -270,7 +270,7 @@ def generate_title(conversation_id):
     try:
         client = get_client_gemini()
         response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
+            model="gemini-3.1-flash-lite",
             contents=f"""
                 Câu hỏi của người dùng: {user_message}
                 Nhiệm vụ: đặt tiêu đề cho một cuộc trò truyện dựa trên tin nhắn đầu tin với quy tắc:
@@ -520,7 +520,7 @@ def chat(conversation_id):
             # raise RuntimeError("TEST: simulated Gemini failure")
             client = get_client_gemini()
             response = client.models.generate_content_stream(
-                model="gemini-3.5-flash",
+                model="gemini-3.5-flash-lite",
                 contents=contents
             )
             for chunk in response:
