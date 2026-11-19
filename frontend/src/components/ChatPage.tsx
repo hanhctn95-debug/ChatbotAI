@@ -35,6 +35,9 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [renameId, setRenameId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const activeAbortControllerRef = useRef<AbortController | null>(null);
+    const messageInputRef = useRef<HTMLTextAreaElement>(null);
+    const oneLineHeightRef = useRef<number | null>(null)
+    const [isMultilineInput, setIsMultilineInput] = useState(false);
 
     // navigate URL by conversation id
     const {conversationId} = useParams<{conversationId: string}>();
@@ -88,6 +91,27 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
         await logout()
         onLogoutSuccess(null)
     }
+
+    // Auto resize text area to fit content (max 200px)
+    useEffect(() => {
+        const textarea = messageInputRef.current;
+        if(!textarea) return;
+        textarea.style.height = "auto";
+
+        if(oneLineHeightRef.current === null){
+            oneLineHeightRef.current = textarea.scrollHeight;
+        }
+        if(inputMessage.length === 0){
+            setIsMultilineInput(false);
+        }
+        else if(textarea.scrollHeight > oneLineHeightRef.current && !isMultilineInput && oneLineHeightRef.current !== null){
+            setIsMultilineInput(true);
+        }
+
+        const maxHeight = 200;
+        textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`
+        textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden"
+    }, [inputMessage, isMultilineInput])
 
     // Load all conversations when starting the page
     useEffect(() => {
@@ -607,16 +631,23 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 onSubmit={handleSendMessages}
                 className="bg-slate-900/80 p-3"
                 >
-                <div className="mx-auto flex max-w-4xl items-center gap-2 rounded-3xl border border-slate-600 bg-slate-800 px-3 py-2 focus-within:border-blue-500">
-                    <input
-                        type="text"
+                <div className={`mx-auto flex w-full max-w-3xl rounded-3xl border border-slate-600 bg-slate-800 px-3 py-2 focus-within:border-blue-500 ${isMultilineInput ? "flex-col" : "flex-row items-end gap-2"}`}>
+                    <textarea
+                        rows={1}
+                        onKeyDown={(event) => {
+                            if(event.key !== "Enter" || event.shiftKey) return;
+                            if(event.nativeEvent.isComposing) return;
+                            event.preventDefault();
+                            event.currentTarget.form?.requestSubmit();
+                        }}
+                        ref={messageInputRef}
                         value={inputMessage}
                         placeholder="Nhập tin nhắn..."
-                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-[15px] leading-5 text-white outline-none placeholder:text-slate-400"
-                        onChange={(event) => setInputMessage(event.target.value)}
+                        className={`min-w-0 resize-none bg-transparent px-2 py-2 text-[15px] leading-5 text-white outline-none placeholder:text-slate-400 ${isMultilineInput ? "w-full" : "flex-1"}`}
                         disabled={isLoading}
+                        onChange={(event) => setInputMessage(event.target.value)}
                     />
-
+                    <div className={`flex justify-end ${isMultilineInput ? "w-full pt-2" : ""}`}>
                     {isLoading ? (
                         <button
                             key="stop"
@@ -656,6 +687,7 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                             </svg>
                         </button>
                     )}
+                    </div>
                 </div>
                 </form>
             </section>
