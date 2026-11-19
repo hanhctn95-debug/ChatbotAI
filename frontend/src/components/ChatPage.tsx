@@ -22,6 +22,11 @@ type ChatPageProps = {
     onLogoutSuccess: (token: string | null) => void;
 };
 
+type ScrollSnapshot = {
+    top: number;
+    atBottom: boolean;
+}
+
 
 function ChatPage({onLogoutSuccess} : ChatPageProps){
     const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -39,12 +44,26 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     const oneLineHeightRef = useRef<number | null>(null)
     const [isMultilineInput, setIsMultilineInput] = useState(false);
 
+    // Scroll
+    const chatContainerRef = useRef<HTMLDivElement>(null)
+    const scrollPositionRef = useRef<Record<string, ScrollSnapshot>>({});
+
     // navigate URL by conversation id
     const {conversationId} = useParams<{conversationId: string}>();
     const navigate = useNavigate();
     const selectedConversationId = conversationId ?? '';
     function setSelectedConversationId(id : string | null){
         navigate(id ? `/chat/${id}` : `/chat`);
+    }
+
+    function handleChatScroll(){
+        const element = chatContainerRef.current;
+        if(!element) return;
+
+        const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80
+        if(selectedConversationId){
+            scrollPositionRef.current[selectedConversationId] = {top: element.scrollTop, atBottom: atBottom}
+        }
     }
 
     function removeRequestMessages(conversationId: string, requestId: string) {
@@ -71,20 +90,28 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
     });
 }
 
-    let messages = messagesByConversationId[selectedConversationId] ?? [];
+    const selectedMessages = messagesByConversationId[selectedConversationId];
+    const messages = selectedMessages ?? [];
 
-    // Create ref
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-
-    // function scroll to bottom
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({behavior: "smooth"})
-    }
-
-    // Call scrollToBottom whem mesages change
+    // Restore the saved position or follow the latest message after the DOM updates.
     useEffect(() => {
-        scrollToBottom();
-    }, [messages])
+        const element = chatContainerRef.current;
+        if (!element || !selectedConversationId || selectedMessages === undefined) return;
+
+        const snapshot = scrollPositionRef.current[selectedConversationId];
+        const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+        const nextTop = snapshot && !snapshot.atBottom
+            ? Math.min(snapshot.top, maxScrollTop)
+            : maxScrollTop;
+
+        element.scrollTop = nextTop;
+
+        const atBottom = maxScrollTop - nextTop < 80;
+        scrollPositionRef.current[selectedConversationId] = {
+            top: nextTop,
+            atBottom,
+        };
+    }, [selectedConversationId, selectedMessages])
 
     // Handle log out
     async function onLogout() {
@@ -210,6 +237,11 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 ]);
                 setSelectedConversationId(newConv.id)
             }
+
+            scrollPositionRef.current[targetConversationId] = {
+                top: chatContainerRef.current?.scrollTop ?? 0,
+                atBottom: true,
+            };
 
             setMessagesByConversationId((prev) => {
                 const updated = prev[targetConversationId] ? [...prev[targetConversationId]] : [];
@@ -555,7 +587,10 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                 <header className="flex justify-center  p-4" >
                     <h1 className="text-lg font-semibold">CHATBOT</h1>
                 </header>
-                <div className="flex-1 overflow-y-auto px-4 py-6">
+                <div className="flex-1 overflow-y-auto px-4 py-6"
+                    ref={chatContainerRef}
+                    onScroll={handleChatScroll}
+                >
                 <div className="mx-auto w-full max-w-3xl space-y-4">
                     {messages.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-slate-500">
@@ -624,7 +659,6 @@ function ChatPage({onLogoutSuccess} : ChatPageProps){
                         );
                     })
                     )}
-                    <div ref={messagesEndRef}></div>
                 </div>
                 </div>
                 <form
